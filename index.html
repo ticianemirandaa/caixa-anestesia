@@ -330,6 +330,8 @@ const FIREBASE_CONFIG = {"apiKey": "AIzaSyBXVnJbXQohHf9EyRJCd7Gow3mT2HGdwZs", "a
 // perguntar durante a bipagem. Me manda mais exemplos que eu vou completando essa lista.
 const GTIN_SEED = {
   "07896676423396": "106145",  // ALFAST 0,5MG/ML AP 5ML [CONT A1](MAVi)
+  "07896676408256": "106145",  // ALFAST 0,5MG/ML AP 5ML [CONT A1](MAVi) — outro lote/embalagem de fábrica — embalagem de fábrica
+  "07896676408256": "106145",  // ALFAST 0,5MG/ML AP 5ML [CONT A1](MAVi) — etiqueta da farmácia central
   "07896676430264": "104314",  // KETAMIN NP 50MG/ML AP 2ML [CONTROL C1]
   "07896676422412": "101831",  // comPAZ(DIAZEPAN) 10MG AP 2ML[CONTR B1]
   "07896676423983": "101823",  // DROPERDAL 2,5MG/ML AP 1ML [CONTR C1]
@@ -406,6 +408,18 @@ function parseCodigoInterno(payload){
   const codigo = payload.slice(0,6);
   const lote = payload.slice(-7);
   return {codigo, lote};
+}
+function analisarPrefixo(raw){
+  // Identificadores de simbologia (AIM) tipo ]d1, ]d2, ]C1, ]Q3 etc.
+  // ]d2 (e ]C1, ]Q3) normalmente indicam GS1 DataMatrix "de verdade" (com AIs 01/17/10...).
+  // ]d1 sozinho é ambíguo — vimos na prática que pode ser um código interno do hospital, não GS1.
+  let payload = raw;
+  let prefixo = null;
+  const m = payload.match(/^\]([A-Za-z])([0-9A-Za-z])/);
+  if (m){ prefixo = ']'+m[1]+m[2]; payload = payload.slice(3); }
+  const gs1Forte = (prefixo === ']d2' || prefixo === ']C1' || prefixo === ']Q3');
+  const temSinalGS1 = gs1Forte || payload.includes('(') || payload.includes(String.fromCharCode(29));
+  return {payload, temSinalGS1};
 }
 function debounce(fn, ms){
   let t;
@@ -650,9 +664,7 @@ document.addEventListener('click', (e)=>{
 async function resolveScan(raw){
   raw = (raw||'').trim();
   if (!raw) return null;
-  let payload = raw;
-  if (/^\][A-Za-z][0-9A-Za-z]/.test(payload)) payload = payload.slice(3);
-  const temSinalGS1 = payload.includes('(') || payload.includes(String.fromCharCode(29));
+  const {payload, temSinalGS1} = analisarPrefixo(raw);
 
   let codigo=null, loteFornecedor=null, loteInstitucional=null, validade=null;
 
@@ -901,9 +913,7 @@ function highlightCadastroItem(idx){
 function biparCadastro(raw){
   raw = (raw||'').trim();
   if (!raw) return;
-  let payload = raw;
-  if (/^\][A-Za-z][0-9A-Za-z]/.test(payload)) payload = payload.slice(3);
-  const temSinalGS1 = payload.includes('(') || payload.includes(String.fromCharCode(29));
+  const {payload, temSinalGS1} = analisarPrefixo(raw);
   let codigoDetectado=null, loteFornecedor=null, loteInstitucional=null, validade=null;
   if (!temSinalGS1 && /^\d{13,}$/.test(payload)){
     const {codigo: cInt, lote: lInt} = parseCodigoInterno(payload);
