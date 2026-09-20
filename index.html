@@ -666,6 +666,36 @@ document.addEventListener('click', (e)=>{
   } else if (e.target.id === 'nuCancel'){ closeModal(null); }
 });
 
+async function garantirUsuarioSelecionado(){
+  if (state.usuarioId && state.usuarios[state.usuarioId]) return;
+  const entradas = Object.entries(state.usuarios);
+  const opts = entradas.map(([id,u])=>'<option value="'+id+'">'+esc(u.nome)+(u.matricula?' ('+esc(u.matricula)+')':'')+'</option>').join('');
+  const html = '<h3>Quem está usando o app agora?</h3>' +
+    '<div class="muted" style="margin-bottom:10px;">Selecione seu nome antes de continuar. Isso identifica quem fez cada reposição e conferência.</div>' +
+    '<div class="row"><select id="selInicial" class="small-input">' + opts + '<option value="__novo__">+ Novo usuário…</option></select></div>' +
+    '<div class="actions"><button class="btn" id="selInicialOk">Confirmar</button></div>';
+  const escolha = await showModal(html);
+  if (escolha === '__novo__'){
+    const dados = await promptNovoUsuarioRapido();
+    if (dados){
+      const id = await addUsuario(dados.nome, dados.matricula);
+      state.usuarioId = id; saveLocalPrefs(); fillUsuarioSelect();
+    } else {
+      return garantirUsuarioSelecionado();
+    }
+  } else if (escolha){
+    state.usuarioId = escolha; saveLocalPrefs(); fillUsuarioSelect();
+  } else {
+    return garantirUsuarioSelecionado();
+  }
+}
+document.addEventListener('click', (e)=>{
+  if (e.target.id === 'selInicialOk'){
+    const sel = document.getElementById('selInicial');
+    closeModal(sel ? sel.value : null);
+  }
+});
+
 /* ---------------- Scan resolution (shared by reposição/conferência/decodificador) ---------------- */
 async function resolveScan(raw){
   raw = (raw||'').trim();
@@ -1325,7 +1355,17 @@ function subscribeReferencia(){ dbApi.collection('referencia').onSnapshot(snap=>
 function subscribeHistorico(){ dbApi.collection('historico').orderBy('criadoEm','desc').limit(400).onSnapshot(snap=>{ state.historico = snap.docs.map(d=>d.data()); renderHistorico(); renderRepInfoPanel(); }, err=>console.error(err)); }
 function subscribeMapeamentos(){ dbApi.collection('mapeamentos').onSnapshot(snap=>{ state.mapeamentos = {}; snap.docs.forEach(d=>{ state.mapeamentos[decodeURIComponent(d.id)] = d.data(); }); renderMapeamentoTable(); }, err=>console.error(err)); }
 function subscribeLotesConhecidos(){ dbApi.collection('lotesConhecidos').onSnapshot(snap=>{ state.lotesConhecidos = {}; snap.docs.forEach(d=>{ state.lotesConhecidos[decodeURIComponent(d.id)] = d.data(); }); renderLotesConhecidosTable(); }, err=>console.error(err)); }
-function subscribeUsuarios(){ dbApi.collection('usuarios').onSnapshot(snap=>{ state.usuarios = {}; snap.docs.forEach(d=>{ state.usuarios[d.id] = d.data(); }); renderUsuariosTable(); fillUsuarioSelect(); }, err=>console.error(err)); }
+function subscribeUsuarios(){
+  return new Promise((resolve)=>{
+    let primeira = true;
+    dbApi.collection('usuarios').onSnapshot(snap=>{
+      state.usuarios = {};
+      snap.docs.forEach(d=>{ state.usuarios[d.id] = d.data(); });
+      renderUsuariosTable(); fillUsuarioSelect();
+      if (primeira){ primeira = false; resolve(); }
+    }, err=>{ console.error(err); if (primeira){ primeira=false; resolve(); } });
+  });
+}
 function subscribeStatusCaixas(){ dbApi.collection('statusCaixas').onSnapshot(snap=>{ snap.docs.forEach(d=>{ state.statusCaixas[d.id] = d.data(); }); renderStatusTable(); }, err=>console.error(err)); }
 
 async function finalizarBipagem(){
@@ -1433,6 +1473,7 @@ function initLocalFallback(){
     if (meta) state.referencia[meta.id] = {nome, itens};
   });
   CAIXAS.forEach(c=>{ state.statusCaixas[c.id] = {status:'pronta', localizacao:'Farmácia 1008'}; });
+  Object.entries(GTIN_SEED).forEach(([gtin, codigo])=>{ state.mapeamentos[gtin] = {codigo}; });
   renderAll();
 }
 
@@ -1445,7 +1486,8 @@ async function boot(){
   try{
     if (typeof firebase !== 'undefined'){
       const fbApp = firebase.initializeApp(FIREBASE_CONFIG);
-      await firebase.auth().signInAnonymously();
+      try{ await firebase.auth().signInAnonymously(); }
+      catch(authErr){ console.error('Login anônimo do Firebase falhou (seguindo mesmo assim, caso as regras do banco ainda estejam abertas):', authErr); }
       dbApi = firebase.firestore();
     } else {
       dbApi = null;
@@ -1460,7 +1502,7 @@ async function boot(){
       subscribeHistorico();
       subscribeMapeamentos();
       subscribeLotesConhecidos();
-      subscribeUsuarios();
+      await subscribeUsuarios();
       subscribeStatusCaixas();
       subscribeEmUso();
     } catch(e){
@@ -1473,6 +1515,7 @@ async function boot(){
     initLocalFallback();
   }
   fillUsuarioSelect();
+  await garantirUsuarioSelecionado();
 }
 
 document.querySelectorAll('nav.tabs button').forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.tab)));
