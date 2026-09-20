@@ -98,6 +98,11 @@ tr.row-pendente td{color:var(--muted);}
 .pill{display:inline-flex; align-items:center; gap:6px; font-size:11px; padding:4px 10px; border-radius:20px; background:var(--grey-bg); color:var(--muted); margin-right:6px;}
 .banner{padding:10px 14px; border-radius:8px; background:var(--warn-bg); color:var(--warn); font-size:12.5px; margin-bottom:14px;}
 .pending-alert{padding:12px 16px; border-radius:10px; background:var(--danger-bg); color:var(--danger); font-size:13px; font-weight:700; margin-bottom:14px; border:1px solid var(--danger);}
+.pending-alert.ok-alert{background:var(--ok-bg); color:var(--ok); border-color:var(--ok);}
+.pending-title{margin-bottom:8px;}
+.pending-chips{display:flex; flex-wrap:wrap; gap:6px;}
+.pending-chip{border:none; cursor:pointer; font-weight:700; font-size:12px;}
+.pending-chip:hover{filter:brightness(1.1);}
 .info-banner{padding:12px 14px; border-radius:8px; background:var(--grey-bg); font-size:12.5px; margin-bottom:14px;}
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
 @media (max-width:640px){.grid2{grid-template-columns:1fr;}}
@@ -113,6 +118,7 @@ a{color:var(--primary);}
 </head>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <body>
 
 <header>
@@ -128,10 +134,11 @@ a{color:var(--primary);}
 </header>
 
 <nav class="tabs">
-  <button data-tab="bipagem" class="active">Reposição / Conferência</button>
-  <button data-tab="status">Status das Caixas</button>
+  <button data-tab="status" class="active">Status das Caixas</button>
+  <button data-tab="bipagem">Reposição / Conferência</button>
   <button data-tab="alertas">Alertas de Validade</button>
   <button data-tab="cadastro">Cadastro da Caixa</button>
+  <button data-tab="contagem">Contagem Geral</button>
   <button data-tab="historico">Histórico</button>
   <button data-tab="consultar">Consultar</button>
   <button data-tab="usuarios">Usuários</button>
@@ -143,7 +150,7 @@ a{color:var(--primary);}
   <div id="pendingBanner"></div>
 
   <!-- BIPAGEM (REPOSIÇÃO / CONFERÊNCIA) -->
-  <section class="view active" id="view-bipagem">
+  <section class="view" id="view-bipagem">
     <div class="modebar">
       <button class="modebtn active" id="modoReposicao">1️⃣ Reposição</button>
       <button class="modebtn" id="modoConferencia">2️⃣ Conferência</button>
@@ -158,6 +165,7 @@ a{color:var(--primary);}
       <div class="muted">Pode bipar o código de qualquer etiqueta — da embalagem original ou da farmácia. Na primeira vez que aparecer um código novo, o app pergunta qual é o medicamento; depois disso, ele já reconhece sozinho.</div>
     </div>
 
+    <div id="ocupacaoBanner"></div>
     <div id="repInfoPanel"></div>
     <div id="lastScanCard"></div>
 
@@ -186,7 +194,7 @@ a{color:var(--primary);}
   <!-- HISTORICO -->
   <!-- USUARIOS -->
   <!-- MAPEAMENTO -->
-  <section class="view" id="view-status">
+  <section class="view active" id="view-status">
     <div class="card">
       <h2>Onde está cada caixa</h2>
       <div class="table-wrap">
@@ -229,6 +237,21 @@ a{color:var(--primary);}
     </div>
   </section>
 
+  <!-- CONTAGEM GERAL -->
+  <section class="view" id="view-contagem">
+    <div class="card">
+      <h2>Contagem geral — todos os medicamentos, de todas as caixas</h2>
+      <div class="muted" style="margin-bottom:10px;">Soma tudo, sem separar por caixa — útil pra saber quanto tem de cada medicamento no total e onde estão os lotes.</div>
+      <input type="text" id="contagemBusca" placeholder="Buscar medicamento ou código…" style="margin-bottom:12px; width:100%;">
+      <div class="table-wrap">
+        <table id="contagemTable">
+          <thead><tr><th>Código</th><th>Medicamento</th><th>Qtd. total</th><th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Caixa(s)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="view-historico">
     <div class="card">
       <h2>Histórico de reposições e conferências</h2>
@@ -237,6 +260,8 @@ a{color:var(--primary);}
         <select id="histTipoSelect"><option value="__all__">Reposição e conferência</option><option value="REPOSICAO">Só reposição</option><option value="CONFERENCIA">Só conferência</option></select>
         <select id="histCaixaSelect"><option value="__all__">Todas as caixas</option></select>
         <input type="text" id="histBusca" placeholder="Buscar medicamento…" style="min-width:200px;">
+        <button class="btn secondary" id="btnExportarCsv" style="margin-left:auto;">⬇️ Exportar histórico (Excel/CSV)</button>
+        <button class="btn secondary" id="btnExportarBackup">⬇️ Backup completo (JSON)</button>
       </div>
       <div class="table-wrap">
         <table id="historicoTable">
@@ -280,6 +305,13 @@ a{color:var(--primary);}
         <table id="mapaTable"><thead><tr><th>Código lido</th><th>Medicamento vinculado</th><th></th></tr></thead><tbody></tbody></table>
       </div>
     </div>
+    <div class="card">
+      <h2>Validades de lote aprendidas</h2>
+      <div class="muted" style="margin-bottom:10px;">Quando um código só traz o lote (sem a validade), o app pergunta a validade uma vez e guarda aqui pras próximas vezes. Se alguém errou ao digitar, apague o registro errado aqui embaixo — na próxima bipagem desse lote, ele pergunta de novo.</div>
+      <div class="table-wrap">
+        <table id="lotesTable"><thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade aprendida</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
   </section>
 
   <footer>Caixa de Anestesia — Radioterapia — Einstein Hospital Israelita — dados de referência importados da planilha original. Uso interno.</footer>
@@ -293,6 +325,30 @@ const CAIXAS = [{"id": "c1", "nome": "Caixa 1_Radioterapia"}, {"id": "c2", "nome
 const STATUS_OPTIONS = [{"id": "em_uso", "label": "Em uso pelo paciente", "localizacaoPadrao": "Radioterapia"}, {"id": "reposicao", "label": "Para reposição", "localizacaoPadrao": "Farmácia 1008"}, {"id": "conferencia", "label": "Para conferência", "localizacaoPadrao": "Farmácia 1008"}, {"id": "cobranca", "label": "Para cobrança", "localizacaoPadrao": "Farmácia 1008"}, {"id": "pronta", "label": "Pronta para uso", "localizacaoPadrao": "Farmácia 1008"}];
 const FIREBASE_CONFIG = {"apiKey": "AIzaSyBXVnJbXQohHf9EyRJCd7Gow3mT2HGdwZs", "authDomain": "caixa-de-anestesia.firebaseapp.com", "projectId": "caixa-de-anestesia", "storageBucket": "caixa-de-anestesia.firebasestorage.app", "messagingSenderId": "461982783497", "appId": "1:461982783497:web:c03256f2c2e472296f00d8"};
 
+// GTINs de fábrica já conhecidos (código de barras da embalagem original) -> código interno do material.
+// Isso NÃO muda com lote/validade — é o mesmo produto pra sempre. Quanto mais eu souber, menos vai
+// perguntar durante a bipagem. Me manda mais exemplos que eu vou completando essa lista.
+const GTIN_SEED = {
+  "07896676423396": "106145",  // ALFAST 0,5MG/ML AP 5ML [CONT A1](MAVi)
+  "07896676430264": "104314",  // KETAMIN NP 50MG/ML AP 2ML [CONTROL C1]
+  "07896676422412": "101831",  // comPAZ(DIAZEPAN) 10MG AP 2ML[CONTR B1]
+  "07896676423983": "101823",  // DROPERDAL 2,5MG/ML AP 1ML [CONTR C1]
+  "07896676423013": "101213",  // EFEDRIN 5% AP 1ML [CONT] (MAVI)
+  "07896676422955": "109503",  // DORMIRE 1MG/ML AP5ML[CONT B1]
+  "07896676423327": "107949",  // ETOMIDATO 20MG AP 10ML [CONTROL C1]
+  "07896676432343": "102780",  // FENTANEST S/C50MCG/ML 5ML[CONT](MAVI)
+  "07896676425352": "105872",  // FLUMAZIL 0,5MG AP 5ML (E10) [CONTC1]
+  "07896676423112": "106543",  // HALO 5MG AP 1ML [CONTR C1]
+  "07896676430424": "102099",  // ARAMIN 10MG AP 1ML (MAVI)
+  "07896676423341": "103744",  // TRAMADON 100mg AP 2mL[CONT]MAVi
+  "07896676424003": "100786",  // Dimorf 1MG/ML AP 2ML(MAVi) [CONTROL A1]
+  "07896676423259": "100791",  // Narcan 0,4MG AP 1ML [CONTR C1]
+  "07896269900259": "100797",  // ULTIVA 2MG FAP [CONT A1](MAVi)
+  "08901148255906": "110869"   // SUVERsadex 200 mg FAP 2mL
+  // 100809 (diPRIvan) não tem GTIN de fábrica aqui — o código bipado foi o formato interno
+  // (código + lote), que já é reconhecido sozinho sem precisar de mapeamento.
+};
+
 const state = {
   caixaId: CAIXAS[0].id,
   modo: 'REPOSICAO',
@@ -302,6 +358,7 @@ const state = {
   lotesConhecidos: {},
   usuarios: {},
   statusCaixas: {},
+  emUso: {},
   historico: [],
   session: {},
   lastScan: null,
@@ -343,6 +400,62 @@ function findItemByCodigo(caixaId, codigo){
   if(!c) return null;
   return c.itens.find(it => String(it.codigo)===String(codigo)) || null;
 }
+function parseCodigoInterno(payload){
+  // Formato interno: 6 dígitos do código do material + preenchimento + 7 dígitos do lote institucional
+  // (lote institucional normalmente começa com 13, 14, 15, 16...), sempre os ÚLTIMOS 7 dígitos.
+  const codigo = payload.slice(0,6);
+  const lote = payload.slice(-7);
+  return {codigo, lote};
+}
+function debounce(fn, ms){
+  let t;
+  return function(...args){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), ms); };
+}
+/* ---------------- "Alguém já está usando esta caixa" ---------------- */
+let heartbeatInterval = null;
+async function marcarEmUso(){
+  if (!dbApi) return;
+  const u = usuarioAtual();
+  try{
+    await dbApi.doc('emUso/'+state.caixaId).set({
+      usuarioNome: u ? u.nome : '(usuário não identificado)',
+      usuarioId: state.usuarioId || null,
+      modo: state.modo,
+      atualizadoEm: new Date().toISOString()
+    });
+  } catch(e){ console.error('erro ao marcar em uso', e); }
+}
+async function liberarEmUso(caixaId){
+  if (!dbApi || !caixaId) return;
+  try{ await dbApi.doc('emUso/'+caixaId).delete(); } catch(e){}
+}
+function iniciarHeartbeat(){
+  pararHeartbeat();
+  marcarEmUso();
+  heartbeatInterval = setInterval(marcarEmUso, 20000);
+}
+function pararHeartbeat(){
+  if (heartbeatInterval){ clearInterval(heartbeatInterval); heartbeatInterval = null; }
+}
+function subscribeEmUso(){
+  dbApi.collection('emUso').onSnapshot(snap=>{
+    state.emUso = {};
+    snap.docs.forEach(d=>{ state.emUso[d.id] = d.data(); });
+    renderOcupacaoBanner();
+  }, err=>console.error('emUso snapshot error', err));
+}
+function renderOcupacaoBanner(){
+  const box = document.getElementById('ocupacaoBanner');
+  if (!box) return;
+  const lock = state.emUso[state.caixaId];
+  if (!lock){ box.innerHTML=''; return; }
+  const isMine = lock.usuarioId && state.usuarioId && lock.usuarioId === state.usuarioId;
+  const idadeMin = (Date.now() - new Date(lock.atualizadoEm).getTime())/60000;
+  if (isMine || idadeMin > 3){ box.innerHTML=''; return; }
+  const modoTxt = lock.modo==='REPOSICAO' ? 'fazendo reposição' : 'fazendo conferência';
+  box.innerHTML = '<div class="info-banner">👀 <b>'+esc(lock.usuarioNome)+'</b> está '+modoTxt+' nesta caixa agora mesmo. Evitem bipar ao mesmo tempo pra não perder informação um do outro.</div>';
+}
+
 function findItemAnyCaixa(codigo){
   const local = findItemByCodigo(state.caixaId, codigo);
   if (local) return local;
@@ -387,7 +500,12 @@ function parseGS1(raw){
   if (found['01']) out.gtin = found['01'].replace(/\D/g,'');
   if (found['10']) out.lote = found['10'];
   if (found['17'] && /^\d{6}$/.test(found['17'])) {
-    const yy = found['17'].slice(0,2), mm = found['17'].slice(2,4), dd = found['17'].slice(4,6);
+    const yy = found['17'].slice(0,2), mm = found['17'].slice(2,4);
+    let dd = found['17'].slice(4,6);
+    if (dd === '00') {
+      // Convenção GS1: dia "00" significa "último dia do mês" (validade não detalha o dia exato).
+      dd = String(new Date(2000+parseInt(yy,10), parseInt(mm,10), 0).getDate()).padStart(2,'0');
+    }
     out.validade = (2000+parseInt(yy,10))+'-'+mm+'-'+dd;
   }
   if (found['21']) out.serial = found['21'];
@@ -538,9 +656,8 @@ async function resolveScan(raw){
 
   let codigo=null, loteFornecedor=null, loteInstitucional=null, validade=null;
 
-  if (!temSinalGS1 && /^\d{7,}$/.test(payload)){
-    const codInterno = payload.slice(0,6);
-    const loteInterno = payload.slice(6);
+  if (!temSinalGS1 && /^\d{13,}$/.test(payload)){
+    const {codigo: codInterno, lote: loteInterno} = parseCodigoInterno(payload);
     const productCodigo = await resolveCodigoProduto(codInterno, ' (código interno · lote lido: '+loteInterno+')');
     if (!productCodigo) return null;
     codigo = productCodigo;
@@ -585,9 +702,7 @@ async function resolveScan(raw){
   return {codigo, loteFornecedor, loteInstitucional, validade, medicamento: item?item.medicamento:'(medicamento não encontrado no cadastro)'};
 }
 
-async function bipar(raw){
-  const res = await resolveScan(raw);
-  if (!res) return;
+function addScan(res){
   state.lastScan = res;
   renderLastScan();
   const key = String(res.codigo);
@@ -599,6 +714,12 @@ async function bipar(raw){
   s.lotes[lk].qtd++;
   if (res.validade) s.lotes[lk].validade = res.validade;
   renderBipagemTable();
+}
+
+async function bipar(raw){
+  const res = await resolveScan(raw);
+  if (!res) return;
+  addScan(res);
 }
 
 async function consultar(raw){
@@ -784,9 +905,10 @@ function biparCadastro(raw){
   if (/^\][A-Za-z][0-9A-Za-z]/.test(payload)) payload = payload.slice(3);
   const temSinalGS1 = payload.includes('(') || payload.includes(String.fromCharCode(29));
   let codigoDetectado=null, loteFornecedor=null, loteInstitucional=null, validade=null;
-  if (!temSinalGS1 && /^\d{7,}$/.test(payload)){
-    codigoDetectado = payload.slice(0,6);
-    loteInstitucional = payload.slice(6);
+  if (!temSinalGS1 && /^\d{13,}$/.test(payload)){
+    const {codigo: cInt, lote: lInt} = parseCodigoInterno(payload);
+    codigoDetectado = cInt;
+    loteInstitucional = lInt;
   } else {
     const gs1 = parseGS1(raw);
     if (gs1 && gs1.gtin){ codigoDetectado = gs1.gtin; loteFornecedor = gs1.lote||null; validade = gs1.validade||null; }
@@ -832,11 +954,13 @@ document.getElementById('cadastroList').addEventListener('click', (e)=>{
     itens[idx].lotes.push({loteFornecedor:'',loteInstitucional:'',validade:''});
     currentCaixa().itens = itens; renderCadastroList();
   } else if (e.target.classList.contains('btnDelLote')){
+    if (!confirm('Apagar este lote do cadastro?')) return;
     const idx = +e.target.dataset.idx, li = +e.target.dataset.li;
     itens[idx].lotes.splice(li,1);
     currentCaixa().itens = itens; renderCadastroList();
   } else if (e.target.classList.contains('btnDelItem')){
     const idx = +e.target.dataset.idx;
+    if (!confirm('Excluir o medicamento "'+itens[idx].medicamento+'" do cadastro desta caixa? Essa ação não pode ser desfeita.')) return;
     itens.splice(idx,1);
     currentCaixa().itens = itens; renderCadastroList();
   }
@@ -910,14 +1034,30 @@ function renderPendingBanner(){
     const st = state.statusCaixas[c.id];
     return st && st.status !== 'pronta';
   });
-  if (pendentes.length===0){ box.innerHTML=''; return; }
+  if (pendentes.length===0){
+    box.innerHTML = '<div class="pending-alert ok-alert">✅ Todas as caixas estão prontas para uso.</div>';
+    return;
+  }
   const nome = (id)=> (state.referencia[id] && state.referencia[id].nome) || (CAIXAS.find(c=>c.id===id)||{}).nome || id;
-  const lista = pendentes.map(c=>{
+  const ICONE = {em_uso:'🏥', reposicao:'📦', conferencia:'🔎', cobranca:'💳'};
+  const chips = pendentes.map(c=>{
     const st = state.statusCaixas[c.id];
-    return esc(nome(c.id))+' — '+ (STATUS_OPTIONS.find(o=>o.id===st.status)||{}).label;
-  }).join(' · ');
-  box.innerHTML = '<div class="pending-alert">⚠️ '+pendentes.length+' caixa(s) precisam de atenção: '+lista+'</div>';
+    const opt = STATUS_OPTIONS.find(o=>o.id===st.status) || {};
+    const cor = STATUS_COR[st.status] || 'grey';
+    return '<button class="pending-chip badge '+cor+'" data-caixa="'+c.id+'">'+(ICONE[st.status]||'•')+' '+esc(nome(c.id))+' — '+opt.label+'</button>';
+  }).join(' ');
+  box.innerHTML = '<div class="pending-alert">' +
+    '<div class="pending-title">⚠️ '+pendentes.length+' caixa(s) aguardando ação — clique para ver:</div>' +
+    '<div class="pending-chips">'+chips+'</div>' +
+  '</div>';
 }
+document.addEventListener('click', (e)=>{
+  const chip = e.target.closest('.pending-chip');
+  if (!chip) return;
+  document.getElementById('caixaSelect').value = chip.dataset.caixa;
+  document.getElementById('caixaSelect').dispatchEvent(new Event('change'));
+  switchTab('status');
+});
 async function salvarStatusCaixa(caixaId, status, localizacao){
   const atualizadoPor = usuarioAtual() ? usuarioAtual().nome : '(não informado)';
   const rec = {status, localizacao, atualizadoPor, atualizadoEm: new Date().toISOString()};
@@ -1028,6 +1168,17 @@ function renderMapeamentoTable(){
     const it = findItemAnyCaixa(m.codigo);
     return '<tr><td>'+esc(codigoLido)+'</td><td>'+esc(it?it.medicamento:'(medicamento não encontrado)')+'</td><td><button class="btn danger btnDelMap" data-codigo="'+esc(codigoLido)+'" style="padding:4px 8px;">✕</button></td></tr>';
   }).join('') || '<tr><td colspan="3" class="muted">Nenhum código mapeado ainda.</td></tr>';
+  renderLotesConhecidosTable();
+}
+function renderLotesConhecidosTable(){
+  const tbody = document.querySelector('#lotesTable tbody');
+  if (!tbody) return;
+  const rows = Object.entries(state.lotesConhecidos);
+  tbody.innerHTML = rows.map(([key, l])=>{
+    const it = findItemAnyCaixa(l.codigo);
+    return '<tr><td>'+esc(it?it.medicamento:l.codigo)+'</td><td>'+esc(l.loteFornecedor||'—')+'</td><td>'+esc(l.loteInstitucional||'—')+'</td><td>'+fmtDateBR(l.validade)+'</td>' +
+      '<td><button class="btn danger btnDelLoteConhecido" data-key="'+esc(key)+'" style="padding:4px 8px;">✕</button></td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">Nenhuma validade aprendida ainda.</td></tr>';
 }
 
 function fillCaixaSelects(){
@@ -1051,11 +1202,42 @@ function fillCaixaSelects(){
   histSel.value = prevHist;
 }
 
+/* ---------------- Contagem geral (todas as caixas) ---------------- */
+function renderContagem(){
+  const buscaEl = document.getElementById('contagemBusca');
+  const busca = (buscaEl && buscaEl.value || '').toLowerCase();
+  const agregados = {};
+  Object.values(state.referencia).forEach(c=>{
+    (c.itens||[]).forEach(item=>{
+      const key = String(item.codigo);
+      if (!agregados[key]) agregados[key] = {codigo:item.codigo, medicamento:item.medicamento, qtdTotal:0, lotes:[]};
+      agregados[key].qtdTotal += (item.qtde||0);
+      (item.lotes||[]).forEach(l=>{
+        if (!l.loteFornecedor && !l.loteInstitucional && !l.validade) return;
+        agregados[key].lotes.push({caixaNome:c.nome, loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade, qtdeMax:l.qtdeMax});
+      });
+    });
+  });
+  let rows = Object.values(agregados);
+  if (busca) rows = rows.filter(r=> r.medicamento.toLowerCase().includes(busca) || String(r.codigo||'').includes(busca));
+  rows.sort((a,b)=> (a.medicamento||'').localeCompare(b.medicamento||''));
+  const tbody = document.querySelector('#contagemTable tbody');
+  tbody.innerHTML = rows.map(r=>{
+    const lF = r.lotes.length ? r.lotes.map(l=>esc(l.loteFornecedor||'—')).join('<br>') : '—';
+    const lI = r.lotes.length ? r.lotes.map(l=>esc(l.loteInstitucional||'—')).join('<br>') : '—';
+    const lV = r.lotes.length ? r.lotes.map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
+    const lC = r.lotes.length ? r.lotes.map(l=>esc(l.caixaNome)).join('<br>') : '<span class="muted">sem lotes cadastrados</span>';
+    return '<tr><td>'+esc(r.codigo)+'</td><td>'+esc(r.medicamento)+'</td><td>'+r.qtdTotal+'</td><td>'+lF+'</td><td>'+lI+'</td><td>'+lV+'</td><td>'+lC+'</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="muted">Nada cadastrado ainda.</td></tr>';
+}
+document.getElementById('contagemBusca').addEventListener('input', debounce(renderContagem, 200));
+
 function renderAll(){
   fillCaixaSelects();
   renderBipagemTable();
   renderRepInfoPanel();
   renderCadastroList();
+  renderContagem();
   renderAlertas();
   renderStatusTable();
   renderHistorico();
@@ -1072,11 +1254,22 @@ async function ensureSeed(){
     for (const c of CAIXAS){ await dbApi.doc('statusCaixas/'+c.id).set({status:'pronta', localizacao:'Farmácia 1008', atualizadoPor:'(seed)', atualizadoEm:new Date().toISOString()}); }
     await dbApi.doc('meta/seed').set({seeded:true, em:new Date().toISOString()});
   }
+  await ensureGtinSeeds();
+}
+async function ensureGtinSeeds(){
+  for (const gtin of Object.keys(GTIN_SEED)){
+    try{
+      const doc = await dbApi.doc('mapeamentos/'+encodeURIComponent(gtin)).get();
+      if (!doc.exists){
+        await dbApi.doc('mapeamentos/'+encodeURIComponent(gtin)).set({codigo: GTIN_SEED[gtin], criadoEm:new Date().toISOString(), origem:'pré-cadastrado'});
+      }
+    } catch(e){ console.error('erro ao pré-cadastrar GTIN', gtin, e); }
+  }
 }
 function subscribeReferencia(){ dbApi.collection('referencia').onSnapshot(snap=>{ snap.docs.forEach(d=>{ state.referencia[d.id] = d.data(); }); renderAll(); }, err=>console.error(err)); }
 function subscribeHistorico(){ dbApi.collection('historico').orderBy('criadoEm','desc').limit(400).onSnapshot(snap=>{ state.historico = snap.docs.map(d=>d.data()); renderHistorico(); renderRepInfoPanel(); }, err=>console.error(err)); }
 function subscribeMapeamentos(){ dbApi.collection('mapeamentos').onSnapshot(snap=>{ state.mapeamentos = {}; snap.docs.forEach(d=>{ state.mapeamentos[decodeURIComponent(d.id)] = d.data(); }); renderMapeamentoTable(); }, err=>console.error(err)); }
-function subscribeLotesConhecidos(){ dbApi.collection('lotesConhecidos').onSnapshot(snap=>{ state.lotesConhecidos = {}; snap.docs.forEach(d=>{ state.lotesConhecidos[decodeURIComponent(d.id)] = d.data(); }); }, err=>console.error(err)); }
+function subscribeLotesConhecidos(){ dbApi.collection('lotesConhecidos').onSnapshot(snap=>{ state.lotesConhecidos = {}; snap.docs.forEach(d=>{ state.lotesConhecidos[decodeURIComponent(d.id)] = d.data(); }); renderLotesConhecidosTable(); }, err=>console.error(err)); }
 function subscribeUsuarios(){ dbApi.collection('usuarios').onSnapshot(snap=>{ state.usuarios = {}; snap.docs.forEach(d=>{ state.usuarios[d.id] = d.data(); }); renderUsuariosTable(); fillUsuarioSelect(); }, err=>console.error(err)); }
 function subscribeStatusCaixas(){ dbApi.collection('statusCaixas').onSnapshot(snap=>{ snap.docs.forEach(d=>{ state.statusCaixas[d.id] = d.data(); }); renderStatusTable(); }, err=>console.error(err)); }
 
@@ -1113,11 +1306,12 @@ async function finalizarBipagem(){
   try{
     if (dbApi){ await dbApi.doc('historico/'+confId).set(doc); } else { state.historico.unshift(doc); }
     alert((state.modo==='REPOSICAO'?'Reposição salva!':'Conferência salva!')+'\nID: '+confId+'\n'+bipados+' item(ns) bipado(s) de '+itens.length+'.');
-    if (state.modo==='CONFERENCIA'){
+    if (true){
+      const acao = state.modo==='REPOSICAO' ? 'reposto' : 'conferido';
       const divergentes = itens.filter(i=>i.resultado==='DIVERGÊNCIA' && i.lotesBipados.length>0);
       const msg = divergentes.length>0
-        ? 'Foram encontrados '+divergentes.length+' item(ns) com divergência.\nDeseja atualizar o cadastro desta caixa com o que foi agora conferido?'
-        : 'Deseja atualizar o cadastro desta caixa com o que foi agora conferido?';
+        ? 'Foram encontrados '+divergentes.length+' item(ns) com divergência.\nDeseja atualizar o cadastro desta caixa com o que foi agora '+acao+'?'
+        : 'Deseja atualizar o cadastro desta caixa com o que foi agora '+acao+'?';
       if (confirm(msg)){
         await atualizarCadastroComBipagem(itens);
       }
@@ -1161,7 +1355,12 @@ async function atualizarCadastroComBipagem(itensBipados){
 function switchTab(tab){
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('main .view').forEach(v=>v.classList.toggle('active', v.id==='view-'+tab));
-  if (tab==='bipagem') setTimeout(()=>document.getElementById('scanInput').focus(), 50);
+  if (tab==='bipagem'){
+    setTimeout(()=>document.getElementById('scanInput').focus(), 50);
+    iniciarHeartbeat();
+  } else {
+    if (heartbeatInterval){ pararHeartbeat(); liberarEmUso(state.caixaId); }
+  }
   if (tab==='consultar') setTimeout(()=>document.getElementById('consultaInput').focus(), 50);
 }
 function updateClock(){
@@ -1191,6 +1390,7 @@ async function boot(){
   try{
     if (typeof firebase !== 'undefined'){
       const fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+      await firebase.auth().signInAnonymously();
       dbApi = firebase.firestore();
     } else {
       dbApi = null;
@@ -1207,6 +1407,7 @@ async function boot(){
       subscribeLotesConhecidos();
       subscribeUsuarios();
       subscribeStatusCaixas();
+      subscribeEmUso();
     } catch(e){
       console.error(e);
       document.getElementById('dbBanner').innerHTML = '<div class="banner">Não foi possível conectar ao banco compartilhado agora (verifique a conexão com a internet). Trabalhando em modo local nesta sessão.</div>';
@@ -1217,14 +1418,15 @@ async function boot(){
     initLocalFallback();
   }
   fillUsuarioSelect();
-  document.getElementById('scanInput').focus();
 }
 
 document.querySelectorAll('nav.tabs button').forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.tab)));
 
 document.getElementById('caixaSelect').addEventListener('change', (e)=>{
+  const caixaAnterior = state.caixaId;
   state.caixaId = e.target.value; state.session = {}; state.lastScan = null;
-  renderLastScan(); renderBipagemTable(); renderRepInfoPanel(); renderCadastroList();
+  renderLastScan(); renderBipagemTable(); renderRepInfoPanel(); renderCadastroList(); renderOcupacaoBanner();
+  if (heartbeatInterval){ liberarEmUso(caixaAnterior); marcarEmUso(); }
 });
 document.getElementById('usuarioSelect').addEventListener('change', async (e)=>{
   if (e.target.value === '__novo__'){
@@ -1243,6 +1445,7 @@ document.getElementById('modoReposicao').addEventListener('click', ()=>{
   document.getElementById('modoConferencia').classList.remove('active');
   renderLastScan(); renderBipagemTable(); renderRepInfoPanel();
   document.getElementById('scanInput').focus();
+  if (heartbeatInterval) marcarEmUso();
 });
 document.getElementById('modoConferencia').addEventListener('click', ()=>{
   state.modo='CONFERENCIA'; state.session={}; state.lastScan=null;
@@ -1250,6 +1453,7 @@ document.getElementById('modoConferencia').addEventListener('click', ()=>{
   document.getElementById('modoReposicao').classList.remove('active');
   renderLastScan(); renderBipagemTable(); renderRepInfoPanel();
   document.getElementById('scanInput').focus();
+  if (heartbeatInterval) marcarEmUso();
 });
 
 document.getElementById('scanInput').addEventListener('keydown', (e)=>{
@@ -1268,15 +1472,7 @@ document.getElementById('btnManual').addEventListener('click', async ()=>{
   let validade = entrada.validade;
   if (!validade) validade = lookupValidade(codigo, entrada.loteFornecedor, entrada.loteInstitucional);
   await learnLote(codigo, entrada.loteFornecedor, entrada.loteInstitucional, validade);
-  state.lastScan = {codigo, loteFornecedor:entrada.loteFornecedor, loteInstitucional:entrada.loteInstitucional, validade, medicamento:item.medicamento};
-  renderLastScan();
-  const key = String(codigo);
-  if (!state.session[key]) state.session[key] = {qtd:0, lotes:{}};
-  const s = state.session[key]; s.qtd++;
-  const lk = loteKey(entrada.loteFornecedor, entrada.loteInstitucional);
-  if (!s.lotes[lk]) s.lotes[lk] = {qtd:0, loteFornecedor:entrada.loteFornecedor, loteInstitucional:entrada.loteInstitucional, validade};
-  s.lotes[lk].qtd++;
-  renderBipagemTable();
+  addScan({codigo, loteFornecedor:entrada.loteFornecedor, loteInstitucional:entrada.loteInstitucional, validade, medicamento: item ? item.medicamento : '(desconhecido)'});
 });
 document.getElementById('btnFinalizar').addEventListener('click', async ()=>{
   const caixa = currentCaixa();
@@ -1296,7 +1492,7 @@ document.getElementById('consultaInput').addEventListener('keydown', (e)=>{
 document.getElementById('alertaCaixaSelect').addEventListener('change', renderAlertas);
 document.getElementById('histTipoSelect').addEventListener('change', renderHistorico);
 document.getElementById('histCaixaSelect').addEventListener('change', renderHistorico);
-document.getElementById('histBusca').addEventListener('input', renderHistorico);
+document.getElementById('histBusca').addEventListener('input', debounce(renderHistorico, 200));
 document.querySelector('#historicoTable tbody').addEventListener('click', (e)=>{
   const row = e.target.closest('.histRow');
   if (row) renderHistDetalhe(row.dataset.id);
@@ -1313,6 +1509,8 @@ document.querySelector('#usuariosTable tbody').addEventListener('click', async (
   const btn = e.target.closest('.btnDelUsuario');
   if (!btn) return;
   const id = btn.dataset.id;
+  const u = state.usuarios[id];
+  if (!confirm('Excluir o usuário "'+(u?u.nome:id)+'"? Isso não apaga o histórico de reposições/conferências já feitas por ele.')) return;
   delete state.usuarios[id];
   if (state.usuarioId===id){ state.usuarioId=null; saveLocalPrefs(); }
   renderUsuariosTable(); fillUsuarioSelect();
@@ -1326,6 +1524,51 @@ document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>
   delete state.mapeamentos[codigo];
   renderMapeamentoTable();
   if (dbApi){ try{ await dbApi.doc('mapeamentos/'+encodeURIComponent(codigo)).delete(); } catch(e){ console.error(e); } }
+});
+document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('.btnDelLoteConhecido');
+  if (!btn) return;
+  const key = btn.dataset.key;
+  delete state.lotesConhecidos[key];
+  renderLotesConhecidosTable();
+  if (dbApi){ try{ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).delete(); } catch(e){ console.error(e); } }
+});
+
+function baixarArquivo(nome, conteudo, tipo){
+  const blob = new Blob([conteudo], {type:tipo});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+function csvEscape(v){
+  const s = (v===undefined||v===null) ? '' : String(v);
+  return '"' + s.replace(/"/g,'""') + '"';
+}
+document.getElementById('btnExportarCsv').addEventListener('click', ()=>{
+  const linhas = [['ID','Tipo','Data','Hora','Caixa','Responsável','Matrícula','Código','Medicamento','Qtd esperada','Qtd bipada','Lote fornecedor','Lote institucional','Validade','Resultado','Tipo divergência','Ação'].map(csvEscape).join(';')];
+  state.historico.forEach(h=>{
+    h.itens.forEach(it=>{
+      const lotes = (it.lotesBipados&&it.lotesBipados.length) ? it.lotesBipados : [{loteFornecedor:'',loteInstitucional:'',validade:''}];
+      lotes.forEach(l=>{
+        linhas.push([h.confId,h.tipo,h.data,h.hora,h.caixaNome,h.responsavelNome,h.responsavelMatricula,it.codigo,it.medicamento,it.qtdEsperada,it.qtdBipada,l.loteFornecedor,l.loteInstitucional,l.validade?fmtDateBR(l.validade):'',it.resultado,it.tipoDivergencia,it.acao].map(csvEscape).join(';'));
+      });
+    });
+  });
+  baixarArquivo('historico_caixa_anestesia_'+fmtYYYYMMDD(new Date())+'.csv', '\uFEFF'+linhas.join('\r\n'), 'text/csv;charset=utf-8');
+});
+document.getElementById('btnExportarBackup').addEventListener('click', ()=>{
+  const backup = {
+    exportadoEm: new Date().toISOString(),
+    referencia: state.referencia,
+    historico: state.historico,
+    statusCaixas: state.statusCaixas,
+    usuarios: state.usuarios,
+    mapeamentos: state.mapeamentos,
+    lotesConhecidos: state.lotesConhecidos
+  };
+  baixarArquivo('backup_caixa_anestesia_'+fmtYYYYMMDD(new Date())+'.json', JSON.stringify(backup, null, 2), 'application/json');
 });
 
 boot();
