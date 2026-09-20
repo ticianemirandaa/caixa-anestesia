@@ -247,11 +247,11 @@ a{color:var(--primary);}
   <section class="view" id="view-contagem">
     <div class="card">
       <h2>Contagem geral — todos os medicamentos, de todas as caixas</h2>
-      <div class="muted" style="margin-bottom:10px;">Soma tudo, sem separar por caixa — útil pra saber quanto tem de cada medicamento no total e onde estão os lotes.</div>
+      <div class="muted" style="margin-bottom:10px;">Cada linha é um lote específico, somado em todas as caixas onde ele aparece. Clique em "Ver caixas" pra saber exatamente onde ele está.</div>
       <input type="text" id="contagemBusca" placeholder="Buscar medicamento ou código…" style="margin-bottom:12px; width:100%;">
       <div class="table-wrap">
         <table id="contagemTable">
-          <thead><tr><th>Código</th><th>Medicamento</th><th>Qtd. total</th><th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Caixa(s)</th></tr></thead>
+          <thead><tr><th>Código</th><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Qtd. total do lote</th><th>Onde está</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -1290,28 +1290,34 @@ function fillCaixaSelects(){
 function renderContagem(){
   const buscaEl = document.getElementById('contagemBusca');
   const busca = (buscaEl && buscaEl.value || '').toLowerCase();
-  const agregados = {};
+  const lotesAgregados = {}; // key = codigo+'|'+loteFornecedor+'|'+loteInstitucional
   Object.values(state.referencia).forEach(c=>{
     (c.itens||[]).forEach(item=>{
-      const key = String(item.codigo);
-      if (!agregados[key]) agregados[key] = {codigo:item.codigo, medicamento:item.medicamento, qtdTotal:0, lotes:[]};
-      agregados[key].qtdTotal += (item.qtde||0);
       (item.lotes||[]).forEach(l=>{
         if (!l.loteFornecedor && !l.loteInstitucional && !l.validade) return;
-        agregados[key].lotes.push({caixaNome:c.nome, loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade, qtdeMax:l.qtdeMax});
+        const key = item.codigo+'|'+(l.loteFornecedor||'')+'|'+(l.loteInstitucional||'');
+        if (!lotesAgregados[key]) lotesAgregados[key] = {
+          codigo:item.codigo, medicamento:item.medicamento,
+          loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade,
+          qtdTotal:0, caixas:[]
+        };
+        const qtd = (l.qtdeMax!=null && l.qtdeMax!=='') ? Number(l.qtdeMax) : 0;
+        lotesAgregados[key].qtdTotal += qtd;
+        lotesAgregados[key].caixas.push({nome:c.nome, qtd});
+        if (l.validade) lotesAgregados[key].validade = l.validade;
       });
     });
   });
-  let rows = Object.values(agregados);
+  let rows = Object.values(lotesAgregados);
   if (busca) rows = rows.filter(r=> r.medicamento.toLowerCase().includes(busca) || String(r.codigo||'').includes(busca));
-  rows.sort((a,b)=> (a.medicamento||'').localeCompare(b.medicamento||''));
+  rows.sort((a,b)=> (a.medicamento||'').localeCompare(b.medicamento||'') || (a.loteInstitucional||'').localeCompare(b.loteInstitucional||''));
   const tbody = document.querySelector('#contagemTable tbody');
   tbody.innerHTML = rows.map(r=>{
-    const lF = r.lotes.length ? r.lotes.map(l=>esc(l.loteFornecedor||'—')).join('<br>') : '—';
-    const lI = r.lotes.length ? r.lotes.map(l=>esc(l.loteInstitucional||'—')).join('<br>') : '—';
-    const lV = r.lotes.length ? r.lotes.map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
-    const lC = r.lotes.length ? r.lotes.map(l=>esc(l.caixaNome)).join('<br>') : '<span class="muted">sem lotes cadastrados</span>';
-    return '<tr><td>'+esc(r.codigo)+'</td><td>'+esc(r.medicamento)+'</td><td>'+r.qtdTotal+'</td><td>'+lF+'</td><td>'+lI+'</td><td>'+lV+'</td><td>'+lC+'</td></tr>';
+    const caixasHtml = r.caixas.map(cx=>esc(cx.nome)+(cx.qtd?' ('+cx.qtd+')':'')).join('<br>');
+    const ondeEsta = r.caixas.length>1
+      ? '<details><summary class="muted" style="cursor:pointer;">Ver '+r.caixas.length+' caixa(s)</summary><div style="margin-top:4px;">'+caixasHtml+'</div></details>'
+      : (r.caixas[0] ? esc(r.caixas[0].nome) : '—');
+    return '<tr><td>'+esc(r.codigo)+'</td><td>'+esc(r.medicamento)+'</td><td>'+esc(r.loteFornecedor||'—')+'</td><td>'+esc(r.loteInstitucional||'—')+'</td><td>'+(r.validade?fmtDateBR(r.validade):'—')+'</td><td><b>'+r.qtdTotal+'</b></td><td>'+ondeEsta+'</td></tr>';
   }).join('') || '<tr><td colspan="7" class="muted">Nada cadastrado ainda.</td></tr>';
 }
 document.getElementById('contagemBusca').addEventListener('input', debounce(renderContagem, 200));
