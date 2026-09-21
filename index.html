@@ -368,13 +368,16 @@ const GTIN_SEED = {
   "07896676430264": "104314",  // KETAMIN NP 50MG/ML AP 2ML [CONTROL C1]
   "07896676422412": "101831",  // comPAZ(DIAZEPAN) 10MG AP 2ML[CONTR B1]
   "07896676423983": "101823",  // DROPERDAL 2,5MG/ML AP 1ML [CONTR C1]
-  "07896676423013": "101213",  // EFEDRIN 5% AP 1ML [CONT] (MAVI)
+  "07896676423013": "101213",  // EFEDRIN 5% AP 1ML [CONT] (MAVI) — embalagem de fábrica
+  "07896676402056": "101213",  // EFEDRIN 5% AP 1ML [CONT] (MAVI) — etiqueta da farmácia central
   "07896676422955": "109503",  // DORMIRE 1MG/ML AP5ML[CONT B1]
   "07896676423327": "107949",  // ETOMIDATO 20MG AP 10ML [CONTROL C1]
-  "07896676432343": "102780",  // FENTANEST S/C50MCG/ML 5ML[CONT](MAVI)
+  "07896676432343": "102780",  // FENTANEST S/C50MCG/ML 5ML[CONT](MAVI) — embalagem de fábrica
+  "07896676428896": "102780",  // FENTANEST S/C50MCG/ML 5ML[CONT](MAVI) — etiqueta da farmácia central
   "07896676425352": "105872",  // FLUMAZIL 0,5MG AP 5ML (E10) [CONTC1]
   "07896676423112": "106543",  // HALO 5MG AP 1ML [CONTR C1]
-  "07896676430424": "102099",  // ARAMIN 10MG AP 1ML (MAVI)
+  "07896676430424": "102099",  // ARAMIN 10MG AP 1ML (MAVI) — embalagem de fábrica
+  "07896676400014": "102099",  // ARAMIN 10MG AP 1ML (MAVI) — etiqueta da farmácia central
   "07896676423341": "103744",  // TRAMADON 100mg AP 2mL[CONT]MAVi
   "07896676424003": "100786",  // Dimorf 1MG/ML AP 2ML(MAVi) [CONTROL A1]
   "07896676423259": "100791",  // Narcan 0,4MG AP 1ML [CONTR C1]
@@ -926,11 +929,34 @@ function renderLastScan(){
   if (!s){ box.innerHTML=''; return; }
   const dias = diasParaVencer(s.validade);
   const cd = classeDias(dias);
-  const alerta = (dias!==null && dias<=90);
-  const estilo = alerta ? ' style="background:var(--'+cd.cls+'-bg); border-color:var(--'+cd.cls+');"' : '';
-  const avisoTopo = alerta ? '<div class="med" style="color:var(--'+cd.cls+');">'+(dias<0 ? '🚫 ESTE LOTE JÁ VENCEU!' : '⚠️ ATENÇÃO: vence em '+dias+' dia(s)!')+'</div>' : '';
+  const alertaValidade = (dias!==null && dias<=90);
+
+  let avisoDivergencia = '';
+  let corDivergencia = null;
+  const item = findItemByCodigo(state.caixaId, s.codigo);
+  if (item){
+    const status = computeStatus(item, state.session[String(item.codigo)]);
+    if (status.resultado==='DIVERGÊNCIA'){
+      corDivergencia = 'danger';
+      const explicacoes = {
+        'LOTE': 'O lote bipado não bate com nenhum lote cadastrado pra esse medicamento nesta caixa.',
+        'VALIDADE': 'O lote bipado é conhecido, mas a validade lida é diferente da que está cadastrada.',
+        'LOTE E VALIDADE': 'Nem o lote nem a validade batem com o que está cadastrado pra esse medicamento nesta caixa.',
+        'QUANTIDADE NESSE LOTE': 'Esse lote específico já passou do máximo de unidades cadastrado pra ele.',
+        'QUANTIDADE': 'A quantidade total bipada é diferente da quantidade esperada pra esse medicamento.'
+      };
+      avisoDivergencia = '<div class="med" style="color:var(--danger);">🚨 DIVERGÊNCIA: '+status.tipo+'</div>' +
+        '<div class="muted" style="width:100%; margin-top:-8px; margin-bottom:4px;">'+(explicacoes[status.tipo]||'')+' Ação sugerida: <b>'+status.acao+'</b></div>';
+    }
+  }
+
+  const alerta = alertaValidade || corDivergencia;
+  const corFinal = corDivergencia || cd.cls;
+  const estilo = alerta ? ' style="background:var(--'+corFinal+'-bg); border-color:var(--'+corFinal+');"' : '';
+  const avisoValidadeTopo = alertaValidade ? '<div class="med" style="color:var(--'+cd.cls+');">'+(dias<0 ? '🚫 ESTE LOTE JÁ VENCEU!' : '⚠️ ATENÇÃO: vence em '+dias+' dia(s)!')+'</div>' : '';
   box.innerHTML = '<div class="result-card"'+estilo+'>' +
-    avisoTopo +
+    avisoDivergencia +
+    avisoValidadeTopo +
     '<div class="med">'+esc(s.medicamento)+' <span class="muted">(código '+esc(s.codigo)+')</span></div>' +
     '<div class="blk"><div class="lbl">Lote fornecedor</div><div class="val">'+esc(s.loteFornecedor||'—')+'</div></div>' +
     '<div class="blk"><div class="lbl">Lote institucional</div><div class="val">'+esc(s.loteInstitucional||'—')+'</div></div>' +
