@@ -199,14 +199,17 @@ a{color:var(--primary);}
         <table id="bipagemTable">
           <thead><tr>
             <th>Código</th><th>Medicamento</th><th>Qtd. esperada</th><th>Qtd. bipada</th>
-            <th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Resultado</th><th>Ação</th>
+            <th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Resultado</th><th>Ação</th><th></th>
           </tr></thead>
           <tbody></tbody>
         </table>
       </div>
       <div class="flex" style="margin-top:14px; justify-content:space-between;">
         <div class="muted" id="resumoConferencia"></div>
-        <button class="btn" id="btnFinalizar">Finalizar reposição</button>
+        <div class="flex">
+          <button class="btn danger" id="btnReiniciar">Reiniciar</button>
+          <button class="btn" id="btnFinalizar">Finalizar reposição</button>
+        </div>
       </div>
     </div>
   </section>
@@ -803,13 +806,13 @@ function addScan(res){
   renderBipagemTable();
 }
 
-function itemFoiBipado(codigo){
-  const s = state.session[String(codigo)];
-  return !!(s && s.qtd>0);
+function itemFoiBipado(item){
+  const s = state.session[String(item.codigo)];
+  return !!(s && s.qtd >= item.qtde);
 }
 function proximoItemPendente(){
   const itens = currentCaixa().itens || [];
-  return itens.find(it => !itemFoiBipado(it.codigo) && !state.pulados.has(String(it.codigo)));
+  return itens.find(it => !itemFoiBipado(it) && !state.pulados.has(String(it.codigo)));
 }
 function renderProximoItem(){
   const box = document.getElementById('proximoItemPanel');
@@ -823,9 +826,11 @@ function renderProximoItem(){
       : '<div class="info-banner">✅ Todos os itens desta caixa já foram bipados!</div>';
     return;
   }
+  const jaTem = state.session[String(alvo.codigo)] ? state.session[String(alvo.codigo)].qtd : 0;
+  const progresso = alvo.qtde>1 ? ' · '+jaTem+' de '+alvo.qtde+' já bipada(s)' : ' · esperado '+alvo.qtde+' un.';
   box.innerHTML = '<div class="proximo-item-card">' +
     '<div class="proximo-lbl">Bipe agora</div>' +
-    '<div class="proximo-nome">'+esc(alvo.medicamento)+' <span class="muted">(código '+esc(alvo.codigo)+' · esperado '+alvo.qtde+' un.)</span></div>' +
+    '<div class="proximo-nome">'+esc(alvo.medicamento)+' <span class="muted">(código '+esc(alvo.codigo)+progresso+')</span></div>' +
     '<button class="btn secondary" id="btnPularItem" data-codigo="'+esc(alvo.codigo)+'">Pular este item →</button>' +
   '</div>';
 }
@@ -967,6 +972,10 @@ function renderBipagemTable(){
     const lF = scan ? Object.values(scan.lotes).map(l=>esc(l.loteFornecedor||'—')+' ('+l.qtd+')').join('<br>') : '—';
     const lI = scan ? Object.values(scan.lotes).map(l=>esc(l.loteInstitucional||'—')+' ('+l.qtd+')').join('<br>') : '—';
     const val = scan ? Object.values(scan.lotes).map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
+    const temAlgoParaApagar = !!scan || state.pulados.has(String(item.codigo));
+    const btnApagar = temAlgoParaApagar
+      ? '<button class="btn danger btnLimparItem" data-codigo="'+esc(item.codigo)+'" style="padding:4px 8px;" title="Apagar bipagem deste item">✕</button>'
+      : '';
     return '<tr class="'+st.cls+'">' +
       '<td>'+esc(item.codigo)+'</td>' +
       '<td>'+esc(item.medicamento)+'</td>' +
@@ -975,6 +984,7 @@ function renderBipagemTable(){
       '<td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
       '<td><b>'+st.resultado+'</b>'+(st.tipo&&st.tipo!=='—'?' — '+st.tipo:'')+'</td>' +
       '<td>'+st.acao+'</td>' +
+      '<td>'+btnApagar+'</td>' +
       '</tr>';
   }).join('');
   const conformes_pendentes_txt = pendentes>0
@@ -1769,6 +1779,31 @@ document.getElementById('btnManual').addEventListener('click', async ()=>{
   addScan({codigo, loteFornecedor:entrada.loteFornecedor, loteInstitucional:entrada.loteInstitucional, validade, medicamento: item ? item.medicamento : '(desconhecido)'});
   renderProximoItem();
 });
+document.querySelector('#bipagemTable tbody').addEventListener('click', async (e)=>{
+  const btn = e.target.closest('.btnLimparItem');
+  if (!btn) return;
+  const codigo = btn.dataset.codigo;
+  const item = findItemByCodigo(state.caixaId, codigo);
+  const ok = await confirmarEstilizado('Apagar bipagem?', '<div class="muted">Vai apagar tudo que foi bipado agora pra "'+esc(item?item.medicamento:codigo)+'" nesta sessão (não afeta o histórico já salvo). Você pode bipar de novo em seguida.</div>', 'Apagar', 'Cancelar');
+  if (!ok) return;
+  delete state.session[String(codigo)];
+  state.pulados.delete(String(codigo));
+  if (state.lastScan && String(state.lastScan.codigo)===String(codigo)) state.lastScan = null;
+  renderLastScan(); renderBipagemTable(); renderProximoItem();
+  document.getElementById('scanInput').focus();
+});
+
+document.getElementById('btnReiniciar').addEventListener('click', async ()=>{
+  const totalBipado = Object.keys(state.session).length;
+  if (totalBipado===0 && state.pulados.size===0){ mostrarToast('Já está tudo limpo.'); return; }
+  const ok = await confirmarEstilizado('Reiniciar tudo?', '<div class="muted">Vai apagar TODAS as bipagens feitas agora nesta caixa (não afeta o histórico já salvo). Essa ação não pode ser desfeita.</div>', 'Reiniciar', 'Cancelar');
+  if (!ok) return;
+  state.session = {}; state.pulados = new Set(); state.lastScan = null;
+  renderLastScan(); renderBipagemTable(); renderProximoItem();
+  mostrarToast('🔄 Reiniciado.');
+  document.getElementById('scanInput').focus();
+});
+
 document.getElementById('btnFinalizar').addEventListener('click', async ()=>{
   const caixa = currentCaixa();
   const pendentesLista = caixa.itens.filter(it => !(state.session[String(it.codigo)] && state.session[String(it.codigo)].qtd>0));
