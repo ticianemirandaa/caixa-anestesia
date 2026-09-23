@@ -333,6 +333,7 @@ a{color:var(--primary);}
     <div class="card">
       <h2>Códigos mapeados</h2>
       <div class="muted" style="margin-bottom:10px;">Toda vez que um código novo aparece, o app pergunta uma vez qual é o medicamento e guarda a resposta aqui. Da próxima vez que esse mesmo código for bipado, ele já reconhece sozinho, sem perguntar de novo.</div>
+      <div class="scan-box"><input type="text" id="mapeamentoScanInput" placeholder="Bipe aqui pra mapear (ou remapear) um código, sem precisar esperar a reposição/conferência…" autocomplete="off"></div>
       <div class="table-wrap">
         <table id="mapaTable"><thead><tr><th>Código lido</th><th>Medicamento vinculado</th><th></th></tr></thead><tbody></tbody></table>
       </div>
@@ -925,24 +926,30 @@ function loteMaxEfetivo(item, lote){
 }
 function computeStatus(item, scan){
   if (!scan || scan.qtd===0) return {resultado:'PREENCHER', tipo:'—', acao:'—', qtdBipada:0, cls:'row-pendente'};
+  const modoReposicao = (state.modo === 'REPOSICAO');
   let loteDiverge=false, validadeDiverge=false, excessoLote=false;
-  Object.values(scan.lotes).forEach(entry=>{
-    const match = (item.lotes||[]).find(e=>
-      (entry.loteFornecedor && e.loteFornecedor && String(e.loteFornecedor)===String(entry.loteFornecedor)) ||
-      (entry.loteInstitucional && e.loteInstitucional && String(e.loteInstitucional)===String(entry.loteInstitucional))
-    );
-    if (!match) loteDiverge = true;
-    else {
-      if (entry.validade && norm(entry.validade)!==norm(match.validade)) validadeDiverge = true;
-      if (entry.qtd > loteMaxEfetivo(item, match)) excessoLote = true;
-    }
-  });
+  if (!modoReposicao){
+    // Na reposição não comparamos com o cadastro antigo: é esperado que o lote mude.
+    // Só a conferência valida se o que está lá bate com o que foi registrado.
+    Object.values(scan.lotes).forEach(entry=>{
+      const match = (item.lotes||[]).find(e=>
+        (entry.loteFornecedor && e.loteFornecedor && String(e.loteFornecedor)===String(entry.loteFornecedor)) ||
+        (entry.loteInstitucional && e.loteInstitucional && String(e.loteInstitucional)===String(entry.loteInstitucional))
+      );
+      if (!match) loteDiverge = true;
+      else {
+        if (entry.validade && norm(entry.validade)!==norm(match.validade)) validadeDiverge = true;
+        if (entry.qtd > loteMaxEfetivo(item, match)) excessoLote = true;
+      }
+    });
+  }
   let resultado, tipo, acao, cls;
   if (loteDiverge && validadeDiverge){ resultado='DIVERGÊNCIA'; tipo='LOTE E VALIDADE'; acao='SEGREGAR E CORRIGIR'; cls='row-lote'; }
   else if (loteDiverge){ resultado='DIVERGÊNCIA'; tipo='LOTE'; acao='SEGREGAR E CORRIGIR LOTE'; cls='row-lote'; }
   else if (validadeDiverge){ resultado='DIVERGÊNCIA'; tipo='VALIDADE'; acao='CORRIGIR VALIDADE NO SISTEMA'; cls='row-validade'; }
   else if (excessoLote){ resultado='DIVERGÊNCIA'; tipo='QUANTIDADE NESSE LOTE'; acao='ESSE LOTE ULTRAPASSOU O MÁXIMO CADASTRADO'; cls='row-qtd'; }
-  else if (scan.qtd !== item.qtde){ resultado='DIVERGÊNCIA'; tipo='QUANTIDADE'; acao='CONFERIR QUANTIDADE FÍSICA'; cls='row-qtd'; }
+  else if (scan.qtd > item.qtde){ resultado='DIVERGÊNCIA'; tipo='QUANTIDADE'; acao='CONFERIR QUANTIDADE FÍSICA (bipou a mais que o esperado)'; cls='row-qtd'; }
+  else if (scan.qtd < item.qtde){ resultado='EM ANDAMENTO'; tipo='—'; acao='CONTINUAR BIPANDO'; cls='row-pendente'; }
   else { resultado='CONFORME'; tipo='SEM DIVERGÊNCIA'; acao='N/A'; cls='row-ok'; }
   return {resultado, tipo, acao, qtdBipada:scan.qtd, cls};
 }
@@ -1016,10 +1023,10 @@ function renderBipagemTable(){
   tbody.innerHTML = itens.map(item=>{
     const scan = state.session[String(item.codigo)];
     let st = computeStatus(item, scan);
-    if (st.resultado==='PREENCHER' && state.pulados.has(String(item.codigo))){
+    if ((st.resultado==='PREENCHER' || st.resultado==='EM ANDAMENTO') && state.pulados.has(String(item.codigo))){
       st = {...st, resultado:'PULADO', tipo:'pendência', acao:'BIPAR ASSIM QUE POSSÍVEL', cls:'row-qtd'};
     }
-    if (st.resultado==='PREENCHER' || st.resultado==='PULADO') pendentes++; else if (st.resultado==='CONFORME') conformes++; else divergentes++;
+    if (st.resultado==='PREENCHER' || st.resultado==='PULADO' || st.resultado==='EM ANDAMENTO') pendentes++; else if (st.resultado==='CONFORME') conformes++; else divergentes++;
     const lF = scan ? Object.values(scan.lotes).map(l=>esc(l.loteFornecedor||'—')+' ('+l.qtd+')').join('<br>') : '—';
     const lI = scan ? Object.values(scan.lotes).map(l=>esc(l.loteInstitucional||'—')+' ('+l.qtd+')').join('<br>') : '—';
     const val = scan ? Object.values(scan.lotes).map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
@@ -1385,7 +1392,7 @@ function renderHistDetalhe(confId){
     vinculo +
     '<div class="table-wrap"><table><thead><tr><th>Código</th><th>Medicamento</th><th>Qtd esperada</th><th>Qtd bipada</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Resultado</th><th>Ação</th></tr></thead><tbody>' +
     h.itens.map(it=>{
-      const cls = it.resultado==='CONFORME'?'row-ok': it.resultado==='PREENCHER'?'row-pendente':'row-lote';
+      const cls = it.resultado==='CONFORME'?'row-ok': (it.resultado==='PREENCHER'||it.resultado==='EM ANDAMENTO')?'row-pendente':'row-lote';
       const lF = (it.lotesBipados||[]).map(l=>esc(l.loteFornecedor||'—')).join('<br>') || '—';
       const lI = (it.lotesBipados||[]).map(l=>esc(l.loteInstitucional||'—')).join('<br>') || '—';
       const val = (it.lotesBipados||[]).map(l=>fmtDateBR(l.validade)).join('<br>') || '—';
@@ -1423,12 +1430,62 @@ async function addUsuario(nome, matricula){
 }
 
 /* ---------------- Mapeamento ---------------- */
+async function promptPickItemGlobal(rawCode, tituloExtra){
+  const vistos = new Set();
+  const opts = [];
+  Object.values(state.referencia).forEach(c=>{
+    (c.itens||[]).forEach(it=>{
+      const key = String(it.codigo);
+      if (!vistos.has(key)){ vistos.add(key); opts.push(it); }
+    });
+  });
+  opts.sort((a,b)=>(a.medicamento||'').localeCompare(b.medicamento||''));
+  const optsHtml = opts.map(it=>'<option value="'+it.codigo+'">'+esc(it.medicamento)+' ('+it.codigo+')</option>').join('');
+  const html = '<h3>Vincular código</h3>' +
+    '<div class="muted" style="margin-bottom:10px;">Código: <b>'+esc(rawCode)+'</b>'+(tituloExtra||'')+'<br>A qual medicamento ele pertence?</div>' +
+    '<div class="row"><select id="pickSelectGlobal" class="small-input">'+optsHtml+'</select></div>' +
+    '<div class="actions"><button class="btn secondary" id="mGlobalCancel">Cancelar</button><button class="btn" id="mGlobalOk">Vincular</button></div>';
+  return await showModal(html);
+}
+document.addEventListener('click', (e)=>{
+  if (e.target.id === 'mGlobalOk'){ const sel = document.getElementById('pickSelectGlobal'); closeModal(sel?sel.value:null); }
+  else if (e.target.id === 'mGlobalCancel'){ closeModal(null); }
+});
+
+async function editarMapeamento(codigoLido){
+  const atual = state.mapeamentos[codigoLido];
+  const itemAtual = atual ? findItemAnyCaixa(atual.codigo) : null;
+  const extra = itemAtual ? ' <br><span class="muted">Hoje está vinculado a: '+esc(itemAtual.medicamento)+'</span>' : '';
+  const escolhido = await promptPickItemGlobal(codigoLido, extra);
+  if (!escolhido) return;
+  await saveMapeamento(codigoLido, escolhido);
+  mostrarToast('✅ Código atualizado.');
+}
+async function biparMapeamento(raw){
+  raw = (raw||'').trim();
+  if (!raw) return;
+  const {payload, temSinalGS1} = analisarPrefixo(raw);
+  let codigoLido;
+  if (!temSinalGS1 && /^\d{13,}$/.test(payload)){
+    codigoLido = parseCodigoInterno(payload).codigo;
+  } else {
+    const gs1 = parseGS1(raw);
+    codigoLido = (gs1 && gs1.gtin) ? gs1.gtin : payload;
+  }
+  await editarMapeamento(codigoLido);
+}
+document.getElementById('mapeamentoScanInput').addEventListener('keydown', (e)=>{
+  if (e.key==='Enter'){ e.preventDefault(); const val = e.target.value; e.target.value=''; biparMapeamento(val); }
+});
+
 function renderMapeamentoTable(){
   const tbody = document.querySelector('#mapaTable tbody');
   const rows = Object.entries(state.mapeamentos);
   tbody.innerHTML = rows.map(([codigoLido, m])=>{
     const it = findItemAnyCaixa(m.codigo);
-    return '<tr><td>'+esc(codigoLido)+'</td><td>'+esc(it?it.medicamento:'(medicamento não encontrado)')+'</td><td><button class="btn danger btnDelMap" data-codigo="'+esc(codigoLido)+'" style="padding:4px 8px;">✕</button></td></tr>';
+    return '<tr><td>'+esc(codigoLido)+'</td><td>'+esc(it?it.medicamento:'(medicamento não encontrado)')+'</td>' +
+      '<td class="flex"><button class="btn secondary btnEditarMap" data-codigo="'+esc(codigoLido)+'" style="padding:4px 8px;">✏️</button>' +
+      '<button class="btn danger btnDelMap" data-codigo="'+esc(codigoLido)+'" style="padding:4px 8px;">✕</button></td></tr>';
   }).join('') || '<tr><td colspan="3" class="muted">Nenhum código mapeado ainda.</td></tr>';
   renderLotesConhecidosTable();
 }
@@ -1868,7 +1925,7 @@ document.getElementById('btnReiniciar').addEventListener('click', async ()=>{
 
 document.getElementById('btnFinalizar').addEventListener('click', async ()=>{
   const caixa = currentCaixa();
-  const pendentesLista = caixa.itens.filter(it => !(state.session[String(it.codigo)] && state.session[String(it.codigo)].qtd>0));
+  const pendentesLista = caixa.itens.filter(it => !itemFoiBipado(it));
   if (pendentesLista.length>0){
     const corpo = '<div class="muted">O ideal é bipar todos os itens da caixa. Ainda faltam:</div>' +
       '<ul style="margin:8px 0 0 18px; padding:0;">'+pendentesLista.map(p=>'<li>'+esc(p.medicamento)+'</li>').join('')+'</ul>';
@@ -1911,12 +1968,17 @@ document.querySelector('#usuariosTable tbody').addEventListener('click', async (
 });
 
 document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>{
-  const btn = e.target.closest('.btnDelMap');
-  if (!btn) return;
-  const codigo = btn.dataset.codigo;
-  delete state.mapeamentos[codigo];
-  renderMapeamentoTable();
-  if (dbApi){ try{ await dbApi.doc('mapeamentos/'+encodeURIComponent(codigo)).delete(); } catch(e){ console.error(e); } }
+  const btnDel = e.target.closest('.btnDelMap');
+  const btnEdit = e.target.closest('.btnEditarMap');
+  if (btnDel){
+    const codigo = btnDel.dataset.codigo;
+    delete state.mapeamentos[codigo];
+    renderMapeamentoTable();
+    if (dbApi){ try{ await dbApi.doc('mapeamentos/'+encodeURIComponent(codigo)).delete(); } catch(e){ console.error(e); } }
+  } else if (btnEdit){
+    const codigo = btnEdit.dataset.codigo;
+    await editarMapeamento(codigo);
+  }
 });
 document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=>{
   const btn = e.target.closest('.btnDelLoteConhecido');
