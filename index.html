@@ -1874,8 +1874,8 @@ async function finalizarBipagem(){
     // Segurança: conferencia nunca transforma uma divergencia em novo cadastro de referencia.
     // Somente a reposicao pode propor atualizar lotes/validades cadastrados.
     if (state.modo==='REPOSICAO'){
-      const corpo = '<div class="muted">Deseja atualizar o cadastro desta caixa com os lotes e validades da reposicao que acabou de ser salva?</div>';
-      const ok = await confirmarEstilizado('Atualizar cadastro?', corpo, 'Atualizar', 'Não, deixar como está');
+      const corpo = '<div class="muted">Os lotes antigos destes medicamentos serão substituídos pelo conteúdo bipado agora. Se as 2, 3 ou 6 unidades estiverem no mesmo lote, ficará um lote com a quantidade total. Se estiverem divididas entre lotes diferentes, todos os lotes bipados serão mantidos com suas respectivas quantidades. Deseja salvar?</div>';
+      const ok = await confirmarEstilizado('Substituir lotes antigos?', corpo, 'Substituir pelo atual', 'Não alterar');
       if (ok) await atualizarCadastroComBipagem(itens);
     } else {
       const divergentes = itens.filter(i=>i.resultado==='DIVERGÊNCIA' && i.lotesBipados.length>0);
@@ -1892,33 +1892,55 @@ async function atualizarCadastroComBipagem(itensBipados){
   const novosItens = caixa.itens.map(item=>{
     const bip = itensBipados.find(i=>String(i.codigo)===String(item.codigo));
     if (!bip || bip.lotesBipados.length===0) return item;
-    const lotesAtualizados = (item.lotes||[]).map(l=>({...l}));
-    bip.lotesBipados.forEach(lb=>{
-      let slot = lotesAtualizados.find(l=>
-        (lb.loteFornecedor && l.loteFornecedor && String(l.loteFornecedor)===String(lb.loteFornecedor)) ||
-        (lb.loteInstitucional && l.loteInstitucional && String(l.loteInstitucional)===String(lb.loteInstitucional))
+
+    // A reposição representa o conteúdo ATUAL da caixa.
+    // Portanto, os lotes bipados substituem os lotes antigos deste medicamento,
+    // em vez de serem apenas acrescentados ao cadastro anterior.
+    const consolidados=[];
+    (bip.lotesBipados||[]).forEach(lb=>{
+      const comp=findComplementoLote(item.codigo,lb.loteFornecedor,lb.loteInstitucional,lb.validade);
+      const atual={
+        loteFornecedor:lb.loteFornecedor||(comp&&comp.loteFornecedor)||null,
+        loteInstitucional:lb.loteInstitucional||(comp&&comp.loteInstitucional)||null,
+        validade:lb.validade||(comp&&comp.validade)||null,
+        qtd:Number(lb.qtd||0)
+      };
+      let mesmo=consolidados.find(x=>
+        (atual.loteFornecedor&&x.loteFornecedor===atual.loteFornecedor) ||
+        (atual.loteInstitucional&&x.loteInstitucional===atual.loteInstitucional)
       );
-      if (!slot){
-        // não achou lote igual: reaproveita um espaço vazio (placeholder) em vez de criar uma linha nova
-        slot = lotesAtualizados.find(l => !l.loteFornecedor && !l.loteInstitucional && !l.validade);
+      if(!mesmo && atual.validade){
+        mesmo=consolidados.find(x=>x.validade===atual.validade && (!x.loteFornecedor||!x.loteInstitucional||!atual.loteFornecedor||!atual.loteInstitucional));
       }
-      if (slot){
-        slot.loteFornecedor = lb.loteFornecedor || slot.loteFornecedor;
-        slot.loteInstitucional = lb.loteInstitucional || slot.loteInstitucional;
-        slot.validade = lb.validade || slot.validade;
-        // qtdeMax do lote NÃO é alterado aqui — é um limite definido no Cadastro
-      } else {
-        // não tem nem lote igual nem espaço vazio: aí sim cria uma linha nova
-        lotesAtualizados.push({loteFornecedor: lb.loteFornecedor, loteInstitucional: lb.loteInstitucional, validade: lb.validade, qtdeMax: null});
-      }
+      if(mesmo){
+        mesmo.loteFornecedor=mesmo.loteFornecedor||atual.loteFornecedor;
+        mesmo.loteInstitucional=mesmo.loteInstitucional||atual.loteInstitucional;
+        mesmo.validade=mesmo.validade||atual.validade;
+        mesmo.qtd+=atual.qtd;
+      }else consolidados.push(atual);
     });
-    return {...item, lotes: lotesAtualizados}; // qtde (quantidade total esperada) NÃO é alterada
+
+    const totalLotes=consolidados.reduce((s,l)=>s+Number(l.qtd||0),0);
+    // Mantém um ou vários lotes conforme o que foi realmente bipado.
+    // A soma das quantidades por lote deve representar a quantidade física atual.
+    if(totalLotes!==Number(bip.qtdBipada||0)){
+      console.warn('Soma por lote diferente da quantidade bipada', item.codigo, totalLotes, bip.qtdBipada);
+    }
+    const lotesAtuais=consolidados.map(l=>({
+      loteFornecedor:l.loteFornecedor,
+      loteInstitucional:l.loteInstitucional,
+      validade:l.validade,
+      qtdeMax:Number(l.qtd||0)
+    })).filter(l=>l.qtdeMax>0);
+    return {...item, lotes:lotesAtuais};
   });
   state.referencia[state.caixaId] = {...caixa, itens: novosItens};
   renderAll();
   if (dbApi){
-    try{ await dbApi.doc('referencia/'+state.caixaId).set({nome:caixa.nome, itens:novosItens}); mostrarToast('✅ Cadastro atualizado e salvo.'); }
-    catch(e){ console.error(e); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); }
+    try{
+      await dbApi.doc('referencia/'+state.caixaId).set({nome:caixa.nome, itens:novosItens});
+      mostrarToast('✅ Cadastro da caixa substituído pelo conteúdo atual da reposição.');
+    }catch(e){ console.error(e); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); }
   }
 }
 
