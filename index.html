@@ -267,21 +267,15 @@ a{color:var(--primary);}
   <!-- CONTAGEM GERAL -->
   <section class="view" id="view-contagem">
     <div class="card">
-      <h2>Contagem geral — todos os medicamentos, de todas as caixas</h2>
-      <div class="muted" style="margin-bottom:10px;">Cada linha é um lote específico, somado em todas as caixas onde ele aparece.</div>
-      <div class="flex" style="margin-bottom:10px;">
-        <button class="modebtn active" id="contagemModoTotal">Total</button>
-        <button class="modebtn" id="contagemModoCaixa">Por caixa</button>
-        <button class="modebtn" id="contagemModoAgrupado">Agrupado por medicamento</button>
-      </div>
-      <input type="text" id="contagemBusca" placeholder="Buscar medicamento ou código…" style="margin-bottom:12px; width:100%;">
+      <h2>Contagem geral por lote</h2>
+      <div class="muted" style="margin-bottom:12px;">Uma linha por medicamento/lote. A quantidade mostra o total estimado cadastrado nas caixas. Clique em “Ver caixas” somente quando precisar conferir a distribuição.</div>
+      <input type="text" id="contagemBusca" placeholder="Buscar medicamento, código ou lote…" style="margin-bottom:12px; width:100%;">
       <div class="table-wrap" id="contagemTableWrap">
         <table id="contagemTable">
-          <thead><tr><th>Código</th><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Qtd. total do lote</th><th>Onde está</th></tr></thead>
+          <thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Qtd. total</th><th>Caixas</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <div id="contagemAgrupado" style="display:none;"></div>
     </div>
   </section>
 
@@ -340,10 +334,20 @@ a{color:var(--primary);}
       </div>
     </div>
     <div class="card">
-      <h2>Validades de lote aprendidas</h2>
-      <div class="muted" style="margin-bottom:10px;">Quando um código só traz o lote (sem a validade), o app pergunta a validade uma vez e guarda aqui pras próximas vezes. Se alguém errou ao digitar, apague o registro errado aqui embaixo — na próxima bipagem desse lote, ele pergunta de novo.</div>
+      <h2>Lotes e validades mapeados</h2>
+      <div class="muted" style="margin-bottom:10px;">Aqui você pode corrigir diretamente o lote fornecedor, lote Einstein e validade aprendida. Ao salvar, o sistema também oferece completar a mesma informação nas outras caixas quando reconhecer o mesmo lote físico.</div>
       <div class="table-wrap">
-        <table id="lotesTable"><thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade aprendida</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="lotesTable"><thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Ações</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div><h2 style="margin-bottom:4px;">Auditoria de cadastros</h2><div class="muted">Localiza testes antigos, códigos inválidos, duplicidades e vínculos órfãos. Nada é excluído automaticamente.</div></div>
+        <button class="btn secondary" id="btnReanalisarCadastros">Reanalisar</button>
+      </div>
+      <div id="auditoriaResumo" class="muted" style="margin-bottom:10px;"></div>
+      <div class="table-wrap">
+        <table id="auditoriaTable"><thead><tr><th>Tipo</th><th>Caixa / origem</th><th>Cadastro encontrado</th><th>Motivo</th><th>Ação</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
   </section>
@@ -397,7 +401,6 @@ const state = {
   usuarios: {},
   statusCaixas: {},
   emUso: {},
-  contagemModo: 'total',
   pulados: new Set(),
   historico: [],
   session: {},
@@ -418,6 +421,15 @@ function fmtDateBR(d){
 function fmtTimeBR(d){ return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0'); }
 function fmtYYYYMMDD(d){ return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
 function fmtHHMMSS(d){ return String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0'); }
+function histDisplayId(h){
+  if (h && h.idCurto) return h.idCurto;
+  if (!h) return '—';
+  const p = h.tipo==='REPOSICAO' ? 'R' : 'C';
+  const raw=String(h.confId||'');
+  const m=raw.match(/(\d{8})-(\d{6})$/);
+  if(m) return p+'-'+m[1].slice(6,8)+m[2].slice(0,4);
+  return raw || p;
+}
 function diasParaVencer(validadeISO){
   if(!validadeISO) return null;
   const hoje = new Date(); hoje.setHours(0,0,0,0);
@@ -628,13 +640,61 @@ async function saveMapeamento(codigoLido, codigo){
 }
 
 function getKnownLotes(codigo){
+  // Consolida lotes de TODAS as caixas + aprendizados e remove duplicatas logicas.
+  // Isso permite reconhecer que lote fornecedor e lote institucional pertencem ao mesmo lote fisico.
   const out = [];
-  const item = findItemAnyCaixa(codigo);
-  if (item) item.lotes.forEach(l=>{ if(l.loteFornecedor||l.loteInstitucional) out.push({loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade}); });
-  Object.values(state.lotesConhecidos).forEach(v=>{
-    if (String(v.codigo)===String(codigo)) out.push({loteFornecedor:v.loteFornecedor, loteInstitucional:v.loteInstitucional, validade:v.validade});
+  Object.values(state.referencia).forEach(c=>{
+    (c.itens||[]).filter(it=>String(it.codigo)===String(codigo)).forEach(item=>{
+      (item.lotes||[]).forEach(l=>{ if(l.loteFornecedor||l.loteInstitucional) out.push({loteFornecedor:l.loteFornecedor||null, loteInstitucional:l.loteInstitucional||null, validade:l.validade||null}); });
+    });
   });
-  return out;
+  Object.values(state.lotesConhecidos).forEach(v=>{
+    if (String(v.codigo)===String(codigo)) out.push({loteFornecedor:v.loteFornecedor||null, loteInstitucional:v.loteInstitucional||null, validade:v.validade||null});
+  });
+  const merged=[];
+  out.forEach(l=>{
+    let m=merged.find(x=>(l.loteFornecedor&&x.loteFornecedor===l.loteFornecedor)||(l.loteInstitucional&&x.loteInstitucional===l.loteInstitucional));
+    if(!m && l.validade) m=merged.find(x=>x.validade===l.validade && ((l.loteFornecedor&&!x.loteFornecedor)||(l.loteInstitucional&&!x.loteInstitucional)));
+    if(m){ m.loteFornecedor=m.loteFornecedor||l.loteFornecedor; m.loteInstitucional=m.loteInstitucional||l.loteInstitucional; m.validade=m.validade||l.validade; }
+    else merged.push({...l});
+  });
+  return merged;
+}
+
+function findComplementoLote(codigo, loteFornecedor, loteInstitucional, validade){
+  return getKnownLotes(codigo).find(k=>
+    (loteFornecedor && k.loteFornecedor===loteFornecedor) ||
+    (loteInstitucional && k.loteInstitucional===loteInstitucional) ||
+    (validade && k.validade===validade && ((loteFornecedor&&!k.loteFornecedor)||(loteInstitucional&&!k.loteInstitucional)))
+  ) || null;
+}
+
+async function propagarComplementoLote(codigo, loteFornecedor, loteInstitucional, validade){
+  const comp=findComplementoLote(codigo,loteFornecedor,loteInstitucional,validade);
+  const lF=loteFornecedor||(comp&&comp.loteFornecedor)||null;
+  const lI=loteInstitucional||(comp&&comp.loteInstitucional)||null;
+  const val=validade||(comp&&comp.validade)||null;
+  if(!lF || !lI) return {loteFornecedor:lF,loteInstitucional:lI,validade:val};
+  const afetadas=[];
+  Object.entries(state.referencia).forEach(([cid,c])=>{
+    (c.itens||[]).forEach(it=>{
+      if(String(it.codigo)!==String(codigo)) return;
+      (it.lotes||[]).forEach(l=>{
+        const match=(lF&&l.loteFornecedor===lF)||(lI&&l.loteInstitucional===lI)||(val&&l.validade===val&&((!l.loteFornecedor&&l.loteInstitucional===lI)||(!l.loteInstitucional&&l.loteFornecedor===lF)));
+        if(match && (!l.loteFornecedor||!l.loteInstitucional)) afetadas.push({cid,caixa:c.nome,item:it,l});
+      });
+    });
+  });
+  if(!afetadas.length) return {loteFornecedor:lF,loteInstitucional:lI,validade:val};
+  const lista=[...new Set(afetadas.map(a=>a.caixa))].join(', ');
+  const ok=await confirmarEstilizado('Completar lote em todas as caixas?', '<div class="muted">Identifiquei que o lote fornecedor <b>'+esc(lF)+'</b> e o lote Einstein <b>'+esc(lI)+'</b> pertencem ao mesmo medicamento/lote fisico. Posso completar automaticamente os registros incompletos em: <b>'+esc(lista)+'</b>.<br><br>Nenhum lote existente sera apagado.</div>', 'Confirmar e completar', 'Agora nao');
+  if(!ok) return {loteFornecedor:lF,loteInstitucional:lI,validade:val};
+  const changed=new Set();
+  afetadas.forEach(a=>{ a.l.loteFornecedor=a.l.loteFornecedor||lF; a.l.loteInstitucional=a.l.loteInstitucional||lI; a.l.validade=a.l.validade||val; changed.add(a.cid); });
+  if(dbApi){ for(const cid of changed){ const c=state.referencia[cid]; await dbApi.doc('referencia/'+cid).set({nome:c.nome,itens:c.itens}); } }
+  mostrarToast('✅ Lotes equivalentes completados em '+changed.size+' caixa(s).');
+  renderAll();
+  return {loteFornecedor:lF,loteInstitucional:lI,validade:val};
 }
 function lookupValidade(codigo, loteFornecedor, loteInstitucional){
   const knowns = getKnownLotes(codigo);
@@ -797,7 +857,14 @@ async function resolveScan(raw){
       validade = v;
     }
   }
+  const complemento = findComplementoLote(codigo, loteFornecedor, loteInstitucional, validade);
+  if (complemento){
+    loteFornecedor = loteFornecedor || complemento.loteFornecedor;
+    loteInstitucional = loteInstitucional || complemento.loteInstitucional;
+    validade = validade || complemento.validade;
+  }
   await learnLote(codigo, loteFornecedor, loteInstitucional, validade);
+  await propagarComplementoLote(codigo, loteFornecedor, loteInstitucional, validade);
   const item = findItemAnyCaixa(codigo);
   return {codigo, loteFornecedor, loteInstitucional, validade, medicamento: item?item.medicamento:'(medicamento não encontrado no cadastro)'};
 }
@@ -1014,7 +1081,7 @@ function renderRepInfoPanel(){
   const itensRepostos = rep.itens.filter(i=>i.qtdBipada>0);
   panel.innerHTML = '<div class="card">' +
     '<h2>Última reposição desta caixa</h2>' +
-    '<div class="muted" style="margin-bottom:10px;">Feita por <b>'+esc(rep.responsavelNome)+'</b>'+(rep.responsavelMatricula?' (matrícula '+esc(rep.responsavelMatricula)+')':'')+' em '+rep.data+' às '+rep.hora+' — ID '+rep.confId+'</div>' +
+    '<div class="muted" style="margin-bottom:10px;">Feita por <b>'+esc(rep.responsavelNome)+'</b>'+(rep.responsavelMatricula?' (matrícula '+esc(rep.responsavelMatricula)+')':'')+' em '+rep.data+' às '+rep.hora+' — ID '+histDisplayId(rep)+'</div>' +
     (itensRepostos.length ? '<div class="table-wrap"><table><thead><tr><th>Medicamento</th><th>Qtd reposta</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th></tr></thead><tbody>' +
       itensRepostos.map(i=>'<tr><td>'+esc(i.medicamento)+'</td><td>'+i.qtdBipada+'</td><td>'+(i.lotesBipados||[]).map(l=>esc(l.loteFornecedor||'—')).join('<br>')+'</td><td>'+(i.lotesBipados||[]).map(l=>esc(l.loteInstitucional||'—')).join('<br>')+'</td><td>'+(i.lotesBipados||[]).map(l=>fmtDateBR(l.validade)).join('<br>')+'</td></tr>').join('') +
       '</tbody></table></div>' : '<div class="muted">Nenhum item foi bipado nessa reposição.</div>') +
@@ -1192,7 +1259,7 @@ document.getElementById('nomeCaixaInput').addEventListener('change', (e)=>{
   state.referencia[state.caixaId] = {nome: e.target.value.trim() || caixa.nome, itens: caixa.itens};
   fillCaixaSelects();
 });
-document.getElementById('cadastroList').addEventListener('click', (e)=>{
+document.getElementById('cadastroList').addEventListener('click', async (e)=>{
   const itens = coletarFormularioCadastro();
 
   if (e.target.classList.contains('btnAddLote')){
@@ -1200,13 +1267,13 @@ document.getElementById('cadastroList').addEventListener('click', (e)=>{
     itens[idx].lotes.push({loteFornecedor:'',loteInstitucional:'',validade:''});
     currentCaixa().itens = itens; renderCadastroList();
   } else if (e.target.classList.contains('btnDelLote')){
-    if (!confirm('Apagar este lote do cadastro?')) return;
+    if (!await confirmarEstilizado('Apagar lote?', '<div class="muted">Este lote será removido do cadastro desta caixa.</div>', 'Apagar', 'Cancelar')) return;
     const idx = +e.target.dataset.idx, li = +e.target.dataset.li;
     itens[idx].lotes.splice(li,1);
     currentCaixa().itens = itens; renderCadastroList();
   } else if (e.target.classList.contains('btnDelItem')){
     const idx = +e.target.dataset.idx;
-    if (!confirm('Excluir o medicamento "'+itens[idx].medicamento+'" do cadastro desta caixa? Essa ação não pode ser desfeita.')) return;
+    if (!await confirmarEstilizado('Excluir medicamento?', '<div class="muted">O medicamento <b>'+esc(itens[idx].medicamento)+'</b> será removido do cadastro desta caixa.</div>', 'Excluir', 'Cancelar')) return;
     itens.splice(idx,1);
     currentCaixa().itens = itens; renderCadastroList();
   }
@@ -1318,12 +1385,32 @@ document.addEventListener('click', (e)=>{
   if (e.target.closest('#btnVerAlertasValidade')) switchTab('alertas');
 });
 
+function tempoStatus(st){
+  if(!st || st.status==='em_uso') return {minutos:null, texto:'', esquecido:false, atrasado:false, ignorar:true};
+  if(!st.atualizadoEm) return {minutos:null, texto:'horário não informado', esquecido:true, atrasado:true, ignorar:false};
+  const dt=new Date(st.atualizadoEm);
+  if(Number.isNaN(dt.getTime())) return {minutos:null, texto:'horário inválido', esquecido:true, atrasado:true, ignorar:false};
+  const minutos=Math.max(0,Math.floor((Date.now()-dt.getTime())/60000));
+  const hoje=new Date();
+  const outroDia=dt.getFullYear()!==hoje.getFullYear() || dt.getMonth()!==hoje.getMonth() || dt.getDate()!==hoje.getDate();
+  // Primeiro alerta e segundo alerta crítico por etapa do fluxo.
+  // Cobrança: 4h. Reposição: 30min. Conferência: 1h.
+  const regras={
+    cobranca:{alerta:240,critico:300,label:'cobrança pendente há mais de 4h'},
+    reposicao:{alerta:30,critico:60,label:'reposição pendente há mais de 30min'},
+    conferencia:{alerta:60,critico:120,label:'conferência pendente há mais de 1h'}
+  };
+  const regra=regras[st.status];
+  if(!regra) return {minutos,texto:'',esquecido:false,atrasado:false,ignorar:true};
+  const texto=minutos<60 ? minutos+' min' : (minutos<1440 ? Math.floor(minutos/60)+'h '+(minutos%60)+'min' : Math.floor(minutos/1440)+' dia(s)');
+  return {minutos,texto,esquecido:outroDia || minutos>=regra.critico,atrasado:minutos>=regra.alerta,ignorar:false,regra};
+}
 function renderPendingBanner(){
   const box = document.getElementById('pendingBanner');
   if (!box) return;
   const pendentes = CAIXAS.filter(c=>{
     const st = state.statusCaixas[c.id];
-    return st && st.status !== 'pronta';
+    return st && st.status !== 'pronta' && st.status !== 'em_uso';
   });
   if (pendentes.length===0){
     box.innerHTML = '<div class="pending-alert ok-alert">✅ Todas as caixas estão prontas para uso.</div>';
@@ -1331,14 +1418,24 @@ function renderPendingBanner(){
   }
   const nome = (id)=> (state.referencia[id] && state.referencia[id].nome) || (CAIXAS.find(c=>c.id===id)||{}).nome || id;
   const ICONE = {em_uso:'🏥', reposicao:'📦', conferencia:'🔎', cobranca:'💳'};
+  const esquecidas=pendentes.filter(c=>tempoStatus(state.statusCaixas[c.id]).esquecido);
+  const atrasadas=pendentes.filter(c=>tempoStatus(state.statusCaixas[c.id]).atrasado && !tempoStatus(state.statusCaixas[c.id]).esquecido);
   const chips = pendentes.map(c=>{
     const st = state.statusCaixas[c.id];
     const opt = STATUS_OPTIONS.find(o=>o.id===st.status) || {};
-    const cor = STATUS_COR[st.status] || 'grey';
-    return '<button class="pending-chip badge '+cor+'" data-caixa="'+c.id+'">'+(ICONE[st.status]||'•')+' '+esc(nome(c.id))+' — '+opt.label+'</button>';
+    const t=tempoStatus(st);
+    const cor = t.esquecido ? 'danger' : (t.atrasado ? 'orange' : (STATUS_COR[st.status] || 'grey'));
+    const aviso=t.esquecido?' · SEGUNDO ALERTA: STATUS AINDA PENDENTE':(t.atrasado?' · PRAZO ATINGIDO':'');
+    return '<button class="pending-chip badge '+cor+'" data-caixa="'+c.id+'" title="Última atualização há '+esc(t.texto)+'">'+(ICONE[st.status]||'•')+' '+esc(nome(c.id))+' — '+esc(opt.label||st.status)+' · há '+esc(t.texto)+aviso+'</button>';
   }).join(' ');
-  box.innerHTML = '<div class="pending-alert">' +
-    '<div class="pending-title">⚠️ '+pendentes.length+' caixa(s) aguardando ação — clique para ver:</div>' +
+  let titulo='⚠️ '+pendentes.length+' caixa(s) aguardando ação';
+  let classe='';
+  let explicacao='Clique na caixa para abrir o status e atualizar.';
+  if(esquecidas.length){ titulo='🚨 Segundo alerta: '+esquecidas.length+' caixa(s) continuam pendentes'; classe=' danger'; explicacao='O primeiro alerta já foi atingido e o status ainda não foi atualizado. Se a caixa já avançou no fluxo, atualize o status agora.'; }
+  else if(atrasadas.length){ titulo='⏰ '+atrasadas.length+' caixa(s) atingiram o prazo de atualização'; classe=' orange'; explicacao='Prazos: cobrança 4h, reposição 30min e conferência 1h. Clique na caixa para atualizar.'; }
+  box.innerHTML = '<div class="pending-alert'+classe+'">' +
+    '<div class="pending-title">'+titulo+'</div>' +
+    '<div class="muted-inv" style="margin:5px 0 9px;">'+explicacao+'</div>'+
     '<div class="pending-chips">'+chips+'</div>' +
   '</div>';
 }
@@ -1354,6 +1451,7 @@ async function salvarStatusCaixa(caixaId, status, localizacao){
   const rec = {status, localizacao, atualizadoPor, atualizadoEm: new Date().toISOString()};
   state.statusCaixas[caixaId] = rec;
   renderStatusTable();
+  renderPendingBanner();
   if (dbApi){
     try{ await dbApi.doc('statusCaixas/'+caixaId).set(rec); mostrarToast('✅ Status salvo.'); }
     catch(e){ console.error(e); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); }
@@ -1389,7 +1487,7 @@ function renderHistorico(){
     const divergentes = h.itens.filter(it=>it.resultado==='DIVERGÊNCIA').length;
     const tipoBadge = h.tipo==='REPOSICAO' ? '<span class="badge orange">📦 REPOSIÇÃO</span>' : '<span class="badge warn">🔎 CONFERÊNCIA</span>';
     return '<tr class="histRow" data-id="'+h.confId+'" style="cursor:pointer;">' +
-      '<td>'+h.confId+'</td><td>'+tipoBadge+'</td><td>'+h.data+'</td><td>'+h.hora+'</td><td>'+esc(h.caixaNome)+'</td>' +
+      '<td><b>'+histDisplayId(h)+'</b></td><td>'+tipoBadge+'</td><td>'+h.data+'</td><td>'+h.hora+'</td><td>'+esc(h.caixaNome)+'</td>' +
       '<td>'+esc(h.responsavelNome)+(h.responsavelMatricula?' ('+esc(h.responsavelMatricula)+')':'')+'</td>' +
       '<td>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+' bipados</td>' +
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
@@ -1412,7 +1510,7 @@ function renderHistDetalhe(confId){
     const rep = state.historico.find(x=>x.confId===h.refReposicaoId);
     if (rep) vinculo = '<div class="info-banner">Conferência referente à reposição <b>'+rep.confId+'</b>, feita por '+esc(rep.responsavelNome)+' em '+rep.data+' '+rep.hora+'.</div>';
   }
-  card.innerHTML = '<h2>'+h.confId+' — '+esc(h.caixaNome)+' ('+h.data+' '+h.hora+', responsável: '+esc(h.responsavelNome)+(h.responsavelMatricula?' — matrícula '+esc(h.responsavelMatricula):'')+')</h2>' +
+  card.innerHTML = '<h2>'+histDisplayId(h)+' — '+esc(h.caixaNome)+' ('+h.data+' '+h.hora+', responsável: '+esc(h.responsavelNome)+(h.responsavelMatricula?' — matrícula '+esc(h.responsavelMatricula):'')+')</h2>' +
     vinculo +
     '<div class="table-wrap"><table><thead><tr><th>Código</th><th>Medicamento</th><th>Qtd esperada</th><th>Qtd bipada</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Resultado</th><th>Ação</th></tr></thead><tbody>' +
     h.itens.map(it=>{
@@ -1519,9 +1617,71 @@ function renderLotesConhecidosTable(){
   const rows = Object.entries(state.lotesConhecidos);
   tbody.innerHTML = rows.map(([key, l])=>{
     const it = findItemAnyCaixa(l.codigo);
-    return '<tr><td>'+esc(it?it.medicamento:l.codigo)+'</td><td>'+esc(l.loteFornecedor||'—')+'</td><td>'+esc(l.loteInstitucional||'—')+'</td><td>'+fmtDateBR(l.validade)+'</td>' +
-      '<td><button class="btn danger btnDelLoteConhecido" data-key="'+esc(key)+'" style="padding:4px 8px;">✕</button></td></tr>';
-  }).join('') || '<tr><td colspan="5" class="muted">Nenhuma validade aprendida ainda.</td></tr>';
+    return '<tr data-lotekey="'+esc(key)+'">'+
+      '<td><b>'+esc(it?it.medicamento:l.codigo)+'</b><div class="muted">Código '+esc(l.codigo)+'</div></td>'+
+      '<td><input class="edit-loteF" type="text" value="'+esc(l.loteFornecedor||'')+'" placeholder="Fornecedor"></td>'+
+      '<td><input class="edit-loteI" type="text" value="'+esc(l.loteInstitucional||'')+'" placeholder="Einstein"></td>'+
+      '<td><input class="edit-validade" type="date" value="'+norm(l.validade)+'"></td>'+
+      '<td><div class="flex"><button class="btn btnSalvarLoteConhecido" data-key="'+esc(key)+'" style="padding:6px 10px;">Salvar</button><button class="btn danger btnDelLoteConhecido" data-key="'+esc(key)+'" style="padding:6px 10px;">✕</button></div></td></tr>';
+  }).join('') || '<tr><td colspan="5" class="muted">Nenhum lote aprendido ainda.</td></tr>';
+}
+
+function nomeCanonicoPorCodigo(codigo){
+  const nomes=[];
+  Object.values(state.referencia).forEach(c=>(c.itens||[]).forEach(it=>{ if(String(it.codigo)===String(codigo) && it.medicamento) nomes.push(it.medicamento.trim()); }));
+  if(!nomes.length) return null;
+  const freq={}; nomes.forEach(n=>freq[n]=(freq[n]||0)+1);
+  return Object.keys(freq).sort((a,b)=>freq[b]-freq[a] || b.length-a.length)[0];
+}
+function analisarCadastrosSuspeitos(){
+  const achados=[];
+  const nomesPorCodigo={};
+  Object.entries(state.referencia).forEach(([cid,c])=>{
+    const vistos={};
+    (c.itens||[]).forEach((it,idx)=>{
+      const codigo=String(it.codigo||'').trim();
+      const nome=String(it.medicamento||'').trim();
+      const teste=/teste|testando|novo medicamento|bipado agora|sem nome|exemplo|dummy|xxx/i.test(nome);
+      const codigoInvalido=!/^\d{6}$/.test(codigo);
+      const qtdInvalida=!Number.isFinite(Number(it.qtde)) || Number(it.qtde)<=0 || Number(it.qtde)>30;
+      if(teste || codigoInvalido || qtdInvalida){
+        const motivos=[]; if(teste) motivos.push('nome com padrão de teste'); if(codigoInvalido) motivos.push('código fora do padrão de 6 dígitos'); if(qtdInvalida) motivos.push('quantidade inválida');
+        achados.push({tipo:'medicamento',cid,idx,origem:c.nome,codigo,nome,motivo:motivos.join(' · '),acao:'excluir'});
+      }
+      if(vistos[codigo]!==undefined && codigo){ achados.push({tipo:'medicamento',cid,idx,origem:c.nome,codigo,nome,motivo:'código duplicado dentro da mesma caixa',acao:'excluir'}); }
+      vistos[codigo]=idx;
+      if(codigo){ if(!nomesPorCodigo[codigo]) nomesPorCodigo[codigo]=new Set(); nomesPorCodigo[codigo].add(nome); }
+    });
+  });
+  Object.entries(nomesPorCodigo).forEach(([codigo,nomes])=>{
+    const validos=[...nomes].filter(Boolean);
+    if(validos.length>1){
+      const padrao=nomeCanonicoPorCodigo(codigo);
+      Object.entries(state.referencia).forEach(([cid,c])=>(c.itens||[]).forEach((it,idx)=>{
+        if(String(it.codigo)===codigo && it.medicamento!==padrao) achados.push({tipo:'nome',cid,idx,origem:c.nome,codigo,nome:it.medicamento,motivo:'mesmo código aparece com nomes diferentes; padrão sugerido: '+padrao,acao:'normalizar',padrao});
+      }));
+    }
+  });
+  Object.entries(state.mapeamentos).forEach(([codigoLido,m])=>{
+    if(!findItemAnyCaixa(m.codigo)) achados.push({tipo:'mapeamento',key:codigoLido,origem:'Códigos mapeados',codigo:codigoLido,nome:'Vinculado ao código '+m.codigo,motivo:'vínculo aponta para medicamento que não existe mais',acao:'excluir'});
+  });
+  Object.entries(state.lotesConhecidos).forEach(([key,l])=>{
+    if(!findItemAnyCaixa(l.codigo)) achados.push({tipo:'lote',key,origem:'Lotes aprendidos',codigo:l.codigo,nome:(l.loteFornecedor||'—')+' / '+(l.loteInstitucional||'—'),motivo:'lote pertence a medicamento que não existe mais',acao:'excluir'});
+  });
+  return achados;
+}
+function renderAuditoriaCadastros(){
+  const tbody=document.querySelector('#auditoriaTable tbody');
+  const resumo=document.getElementById('auditoriaResumo');
+  if(!tbody||!resumo) return;
+  const rows=analisarCadastrosSuspeitos();
+  resumo.innerHTML=rows.length ? '<b>'+rows.length+' possível(is) inconsistência(s)</b>. Revise antes de remover.' : '✅ Nenhum cadastro claramente fora do padrão foi encontrado.';
+  tbody.innerHTML=rows.map((r,i)=>'<tr><td><span class="badge '+(r.acao==='normalizar'?'warn':'danger')+'">'+esc(r.tipo)+'</span></td><td>'+esc(r.origem)+'</td><td><b>'+esc(r.nome||'—')+'</b><div class="muted">Código '+esc(r.codigo||'—')+'</div></td><td>'+esc(r.motivo)+'</td><td><button class="btn '+(r.acao==='normalizar'?'secondary':'danger')+' btnAcaoAuditoria" data-index="'+i+'" style="padding:5px 9px;">'+(r.acao==='normalizar'?'Padronizar nome':'Excluir suspeito')+'</button></td></tr>').join('') || '<tr><td colspan="5" class="muted">Nenhuma inconsistência clara encontrada.</td></tr>';
+  window.__auditoriaRows=rows;
+}
+async function salvarReferenciaAuditada(cid){
+  const c=state.referencia[cid];
+  if(dbApi) await dbApi.doc('referencia/'+cid).set({nome:c.nome,itens:c.itens});
 }
 
 function fillCaixaSelects(){
@@ -1547,96 +1707,68 @@ function fillCaixaSelects(){
 
 /* ---------------- Contagem geral (todas as caixas) ---------------- */
 function renderContagem(){
-  const buscaEl = document.getElementById('contagemBusca');
-  const busca = (buscaEl && buscaEl.value || '').toLowerCase();
-  const lotesAgregados = {}; // key = codigo+'|'+loteFornecedor+'|'+loteInstitucional
-  Object.values(state.referencia).forEach(c=>{
+  const busca = ((document.getElementById('contagemBusca')||{}).value||'').trim().toLowerCase();
+  const grupos = [];
+
+  function acharGrupo(codigo, lote){
+    return grupos.find(g=>{
+      if(String(g.codigo)!==String(codigo)) return false;
+      if(lote.loteFornecedor && g.loteFornecedor && String(lote.loteFornecedor)===String(g.loteFornecedor)) return true;
+      if(lote.loteInstitucional && g.loteInstitucional && String(lote.loteInstitucional)===String(g.loteInstitucional)) return true;
+      // Só usa validade para unir registros incompletos do mesmo medicamento.
+      if(lote.validade && g.validade===lote.validade){
+        const umLadoIncompleto = (!lote.loteFornecedor || !lote.loteInstitucional || !g.loteFornecedor || !g.loteInstitucional);
+        if(umLadoIncompleto) return true;
+      }
+      return false;
+    });
+  }
+
+  Object.entries(state.referencia).forEach(([caixaId,c])=>{
     (c.itens||[]).forEach(item=>{
-      (item.lotes||[]).forEach(l=>{
-        if (!l.loteFornecedor && !l.loteInstitucional && !l.validade) return;
-        const key = item.codigo+'|'+(l.loteFornecedor||'')+'|'+(l.loteInstitucional||'');
-        if (!lotesAgregados[key]) lotesAgregados[key] = {
-          codigo:item.codigo, medicamento:item.medicamento,
-          loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade,
-          qtdTotal:0, caixas:[]
-        };
-        const qtd = loteMaxEfetivo(item, l);
-        lotesAgregados[key].qtdTotal += qtd;
-        lotesAgregados[key].caixas.push({nome:c.nome, qtd});
-        if (l.validade) lotesAgregados[key].validade = l.validade;
+      const lotes=(item.lotes||[]).filter(l=>l.loteFornecedor||l.loteInstitucional||l.validade);
+      if(!lotes.length) return;
+      lotes.forEach(l=>{
+        let g=acharGrupo(item.codigo,l);
+        if(!g){
+          g={codigo:item.codigo,medicamento:item.medicamento,loteFornecedor:l.loteFornecedor||null,loteInstitucional:l.loteInstitucional||null,validade:l.validade||null,qtdTotal:0,caixas:[]};
+          grupos.push(g);
+        } else {
+          g.loteFornecedor=g.loteFornecedor||l.loteFornecedor||null;
+          g.loteInstitucional=g.loteInstitucional||l.loteInstitucional||null;
+          g.validade=g.validade||l.validade||null;
+        }
+        const qtd=loteMaxEfetivo(item,l);
+        g.qtdTotal += qtd;
+        const existente=g.caixas.find(x=>x.id===caixaId);
+        if(existente) existente.qtd += qtd;
+        else g.caixas.push({id:caixaId,nome:c.nome,qtd});
       });
     });
   });
-  let rows = Object.values(lotesAgregados);
-  if (busca) rows = rows.filter(r=> r.medicamento.toLowerCase().includes(busca) || String(r.codigo||'').includes(busca));
-  rows.sort((a,b)=> (a.medicamento||'').localeCompare(b.medicamento||'') || (a.loteInstitucional||'').localeCompare(b.loteInstitucional||''));
-  const tbody = document.querySelector('#contagemTable tbody');
-  const tableWrap = document.getElementById('contagemTableWrap');
-  const agrupadoBox = document.getElementById('contagemAgrupado');
 
-  if (state.contagemModo === 'agrupado'){
-    tableWrap.style.display = 'none';
-    agrupadoBox.style.display = 'block';
-    const porMed = {};
-    rows.forEach(r=>{
-      const key = String(r.codigo);
-      if (!porMed[key]) porMed[key] = {codigo:r.codigo, medicamento:r.medicamento, qtdTotal:0, lotes:[]};
-      porMed[key].qtdTotal += r.qtdTotal;
-      porMed[key].lotes.push(r);
-    });
-    const grupos = Object.values(porMed).sort((a,b)=>(a.medicamento||'').localeCompare(b.medicamento||''));
-    agrupadoBox.innerHTML = grupos.map(m=>{
-      const chips = m.lotes.map(l=>{
-        const dias = diasParaVencer(l.validade);
-        const cd = classeDias(dias);
-        return '<div class="lote-chip">' +
-          '<div class="lote-chip-qtd">'+l.qtdTotal+' <span>un.</span></div>' +
-          '<div class="lote-chip-linha"><span class="muted">Fornecedor</span><b>'+esc(l.loteFornecedor||'—')+'</b></div>' +
-          '<div class="lote-chip-linha"><span class="muted">Institucional</span><b>'+esc(l.loteInstitucional||'—')+'</b></div>' +
-          '<div class="lote-chip-linha"><span class="muted">Validade</span><span class="badge '+cd.cls+'">'+(l.validade?fmtDateBR(l.validade):'—')+'</span></div>' +
-        '</div>';
-      }).join('');
-      return '<div class="contagem-grupo">' +
-        '<div class="contagem-grupo-header">' +
-          '<div class="contagem-grupo-nome">'+esc(m.medicamento)+' <span class="muted">(código '+esc(m.codigo)+')</span></div>' +
-          '<div class="contagem-grupo-total">'+m.qtdTotal+' un. no total</div>' +
-        '</div>' +
-        '<div class="contagem-lotes-grid">'+chips+'</div>' +
-      '</div>';
-    }).join('') || '<div class="muted">Nada cadastrado ainda.</div>';
-    return;
-  }
-  tableWrap.style.display = 'block';
-  agrupadoBox.style.display = 'none';
+  let rows=grupos;
+  if(busca) rows=rows.filter(r=>[r.codigo,r.medicamento,r.loteFornecedor,r.loteInstitucional].some(v=>String(v||'').toLowerCase().includes(busca)));
+  rows.sort((a,b)=>(a.medicamento||'').localeCompare(b.medicamento||'') || String(a.validade||'').localeCompare(String(b.validade||'')));
 
-  if (state.contagemModo === 'porcaixa'){
-    const flat = [];
-    rows.forEach(r=>{ r.caixas.forEach(cx=>{ flat.push({...r, caixaNome:cx.nome, qtdCaixa:cx.qtd}); }); });
-    tbody.innerHTML = flat.map(r=>
-      '<tr><td>'+esc(r.codigo)+'</td><td>'+esc(r.medicamento)+'</td><td>'+esc(r.loteFornecedor||'—')+'</td><td>'+esc(r.loteInstitucional||'—')+'</td><td>'+(r.validade?fmtDateBR(r.validade):'—')+'</td><td><b>'+r.qtdCaixa+'</b></td><td>'+esc(r.caixaNome)+'</td></tr>'
-    ).join('') || '<tr><td colspan="7" class="muted">Nada cadastrado ainda.</td></tr>';
-  } else {
-    tbody.innerHTML = rows.map(r=>{
-      const caixasHtml = r.caixas.map(cx=>esc(cx.nome)+(cx.qtd?' ('+cx.qtd+')':'')).join('<br>');
-      const ondeEsta = r.caixas.length>1
-        ? '<details><summary class="muted" style="cursor:pointer;">Ver '+r.caixas.length+' caixa(s)</summary><div style="margin-top:4px;">'+caixasHtml+'</div></details>'
-        : (r.caixas[0] ? esc(r.caixas[0].nome) : '—');
-      return '<tr><td>'+esc(r.codigo)+'</td><td>'+esc(r.medicamento)+'</td><td>'+esc(r.loteFornecedor||'—')+'</td><td>'+esc(r.loteInstitucional||'—')+'</td><td>'+(r.validade?fmtDateBR(r.validade):'—')+'</td><td><b>'+r.qtdTotal+'</b></td><td>'+ondeEsta+'</td></tr>';
-    }).join('') || '<tr><td colspan="7" class="muted">Nada cadastrado ainda.</td></tr>';
-  }
+  const tbody=document.querySelector('#contagemTable tbody');
+  tbody.innerHTML=rows.map((r,idx)=>{
+    const cd=classeDias(diasParaVencer(r.validade));
+    const distribuicao=r.caixas.map(cx=>'<div style="display:flex;justify-content:space-between;gap:18px;padding:3px 0;"><span>'+esc(cx.nome)+'</span><b>'+cx.qtd+' un.</b></div>').join('');
+    const caixas=r.caixas.length===1
+      ? '<span class="muted">'+esc(r.caixas[0].nome)+'</span>'
+      : '<details><summary style="cursor:pointer;color:var(--primary);font-weight:700;">Ver '+r.caixas.length+' caixas</summary><div style="min-width:220px;margin-top:6px;">'+distribuicao+'</div></details>';
+    return '<tr>'+
+      '<td><b>'+esc(r.medicamento)+'</b><div class="muted">Código '+esc(r.codigo)+'</div></td>'+
+      '<td>'+esc(r.loteFornecedor||'—')+'</td>'+
+      '<td>'+esc(r.loteInstitucional||'—')+'</td>'+
+      '<td><span class="badge '+cd.cls+'">'+(r.validade?fmtDateBR(r.validade):'—')+'</span></td>'+
+      '<td><b style="font-size:16px;color:var(--primary);">'+r.qtdTotal+'</b> un.</td>'+
+      '<td>'+caixas+'</td>'+
+    '</tr>';
+  }).join('') || '<tr><td colspan="6" class="muted">Nenhum lote cadastrado.</td></tr>';
 }
 document.getElementById('contagemBusca').addEventListener('input', debounce(renderContagem, 200));
-function ativarModoContagem(modo){
-  state.contagemModo = modo;
-  const idPorModo = {total:'contagemModoTotal', porcaixa:'contagemModoCaixa', agrupado:'contagemModoAgrupado'};
-  ['contagemModoTotal','contagemModoCaixa','contagemModoAgrupado'].forEach(id=>{
-    document.getElementById(id).classList.toggle('active', id===idPorModo[modo]);
-  });
-  renderContagem();
-}
-document.getElementById('contagemModoAgrupado').addEventListener('click', ()=>ativarModoContagem('agrupado'));
-document.getElementById('contagemModoTotal').addEventListener('click', ()=>ativarModoContagem('total'));
-document.getElementById('contagemModoCaixa').addEventListener('click', ()=>ativarModoContagem('porcaixa'));
 
 function renderAll(){
   fillCaixaSelects();
@@ -1652,6 +1784,7 @@ function renderAll(){
   renderUsuariosTable();
   fillUsuarioSelect();
   renderMapeamentoTable();
+  renderAuditoriaCadastros();
 }
 
 /* ---------------- DB / persistence ---------------- */
@@ -1689,10 +1822,10 @@ function subscribeUsuarios(){
     }, err=>{ console.error(err); if (primeira){ primeira=false; resolve(); } });
   });
 }
-function subscribeStatusCaixas(){ dbApi.collection('statusCaixas').onSnapshot(snap=>{ snap.docs.forEach(d=>{ state.statusCaixas[d.id] = d.data(); }); renderStatusTable(); }, err=>console.error(err)); }
+function subscribeStatusCaixas(){ dbApi.collection('statusCaixas').onSnapshot(snap=>{ state.statusCaixas={}; snap.docs.forEach(d=>{ state.statusCaixas[d.id] = d.data(); }); renderStatusTable(); renderPendingBanner(); }, err=>console.error(err)); }
 
 async function finalizarBipagem(){
-  if (!usuarioAtual()){ alert('Selecione (ou cadastre) o usuário responsável no topo da página antes de finalizar.'); return; }
+  if (!usuarioAtual()){ mostrarToast('Selecione o usuário responsável antes de finalizar.', 'erro'); return; }
   if (state.modo==='CONFERENCIA'){
     const repAnterior = state.historico.find(h=>h.tipo==='REPOSICAO' && h.caixaId===state.caixaId);
     if (repAnterior){
@@ -1718,13 +1851,14 @@ async function finalizarBipagem(){
     };
   });
   const bipados = itens.filter(i=>i.qtdBipada>0).length;
-  if (bipados===0){ alert('Bipe pelo menos um item antes de finalizar.'); return; }
+  if (bipados===0){ mostrarToast('Bipe pelo menos um item antes de finalizar.', 'erro'); return; }
   const now = new Date();
   const prefixo = state.modo==='REPOSICAO' ? 'REP' : 'CONF';
   const confId = prefixo+'-'+caixa.nome.replace(/[^A-Za-z0-9]+/g,'').slice(0,10)+'-'+fmtYYYYMMDD(now)+'-'+fmtHHMMSS(now);
+  const idCurto = (state.modo==='REPOSICAO'?'R':'C')+'-'+String(now.getDate()).padStart(2,'0')+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0')+String(now.getSeconds()).padStart(2,'0');
   const u = usuarioAtual();
   const doc = {
-    confId, tipo: state.modo,
+    confId, idCurto, tipo: state.modo,
     data:fmtDateBR(now.toISOString().slice(0,10)), hora:fmtTimeBR(now),
     caixaId: state.caixaId, caixaNome: caixa.nome,
     responsavelNome: u.nome, responsavelMatricula: u.matricula||'', responsavelId: state.usuarioId||null,
@@ -1736,21 +1870,21 @@ async function finalizarBipagem(){
   }
   try{
     if (dbApi){ await dbApi.doc('historico/'+confId).set(doc); } else { state.historico.unshift(doc); }
-    alert((state.modo==='REPOSICAO'?'Reposição salva!':'Conferência salva!')+'\nID: '+confId+'\n'+bipados+' item(ns) bipado(s) de '+itens.length+'.');
-    if (true){
-      const acao = state.modo==='REPOSICAO' ? 'reposto' : 'conferido';
-      const divergentes = itens.filter(i=>i.resultado==='DIVERGÊNCIA' && i.lotesBipados.length>0);
-      const corpo = divergentes.length>0
-        ? '<div class="muted">Foram encontrados <b>'+divergentes.length+' item(ns) com divergência</b>. Deseja atualizar o cadastro desta caixa com o que foi agora '+acao+'?</div>'
-        : '<div class="muted">Deseja atualizar o cadastro desta caixa com o que foi agora '+acao+'?</div>';
+    mostrarToast('✅ '+(state.modo==='REPOSICAO'?'Reposição':'Conferência')+' '+idCurto+' salva · '+bipados+'/'+itens.length+' itens.');
+    // Segurança: conferencia nunca transforma uma divergencia em novo cadastro de referencia.
+    // Somente a reposicao pode propor atualizar lotes/validades cadastrados.
+    if (state.modo==='REPOSICAO'){
+      const corpo = '<div class="muted">Deseja atualizar o cadastro desta caixa com os lotes e validades da reposicao que acabou de ser salva?</div>';
       const ok = await confirmarEstilizado('Atualizar cadastro?', corpo, 'Atualizar', 'Não, deixar como está');
-      if (ok){
-        await atualizarCadastroComBipagem(itens);
-      }
+      if (ok) await atualizarCadastroComBipagem(itens);
+    } else {
+      const divergentes = itens.filter(i=>i.resultado==='DIVERGÊNCIA' && i.lotesBipados.length>0);
+      if(divergentes.length) mostrarToast('🔒 Conferencia salva. Divergencias nao alteraram o cadastro.', 'erro');
+      else mostrarToast('✅ Conferencia salva sem alterar o cadastro.');
     }
     state.session = {}; state.lastScan = null; state.pulados = new Set();
     renderLastScan(); renderBipagemTable(); renderHistorico(); renderRepInfoPanel(); renderProximoItem();
-  } catch(e){ console.error(e); alert('Não foi possível salvar agora. Tente novamente.'); }
+  } catch(e){ console.error(e); mostrarToast('Não foi possível salvar agora. Tente novamente.', 'erro'); }
 }
 
 async function atualizarCadastroComBipagem(itensBipados){
@@ -1824,6 +1958,7 @@ async function boot(){
   loadLocalPrefs();
   updateClock();
   setInterval(updateClock, 1000);
+setInterval(renderPendingBanner, 60000);
 
   try{
     if (typeof firebase !== 'undefined'){
@@ -1975,7 +2110,7 @@ document.querySelector('#historicoTable tbody').addEventListener('click', (e)=>{
 document.getElementById('btnAddUsuario').addEventListener('click', async ()=>{
   const nome = document.getElementById('novoUsuarioNome').value.trim();
   const matricula = document.getElementById('novoUsuarioMatricula').value.trim();
-  if (!nome){ alert('Informe ao menos o nome.'); return; }
+  if (!nome){ mostrarToast('Informe ao menos o nome.', 'erro'); return; }
   await addUsuario(nome, matricula);
   document.getElementById('novoUsuarioNome').value=''; document.getElementById('novoUsuarioMatricula').value='';
 });
@@ -1984,7 +2119,7 @@ document.querySelector('#usuariosTable tbody').addEventListener('click', async (
   if (!btn) return;
   const id = btn.dataset.id;
   const u = state.usuarios[id];
-  if (!confirm('Excluir o usuário "'+(u?u.nome:id)+'"? Isso não apaga o histórico de reposições/conferências já feitas por ele.')) return;
+  if (!await confirmarEstilizado('Excluir usuário?', '<div class="muted">Excluir <b>'+esc(u?u.nome:id)+'</b>? O histórico já registrado será mantido.</div>', 'Excluir', 'Cancelar')) return;
   delete state.usuarios[id];
   if (state.usuarioId===id){ state.usuarioId=null; saveLocalPrefs(); }
   renderUsuariosTable(); fillUsuarioSelect();
@@ -2005,12 +2140,66 @@ document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>
   }
 });
 document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=>{
-  const btn = e.target.closest('.btnDelLoteConhecido');
-  if (!btn) return;
-  const key = btn.dataset.key;
-  delete state.lotesConhecidos[key];
-  renderLotesConhecidosTable();
-  if (dbApi){ try{ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).delete(); } catch(e){ console.error(e); } }
+  const btnSave = e.target.closest('.btnSalvarLoteConhecido');
+  const btnDel = e.target.closest('.btnDelLoteConhecido');
+  if (btnSave){
+    const oldKey=btnSave.dataset.key;
+    const old=state.lotesConhecidos[oldKey];
+    if(!old) return;
+    const tr=btnSave.closest('tr');
+    const loteFornecedor=tr.querySelector('.edit-loteF').value.trim()||null;
+    const loteInstitucional=tr.querySelector('.edit-loteI').value.trim()||null;
+    const validade=tr.querySelector('.edit-validade').value||null;
+    if(!loteFornecedor && !loteInstitucional){ mostrarToast('Informe ao menos um dos lotes.', 'erro'); return; }
+    if(!validade){ mostrarToast('Informe a validade.', 'erro'); return; }
+    const novoKey=old.codigo+'_'+(loteFornecedor||'')+'_'+(loteInstitucional||'');
+    const rec={codigo:old.codigo,loteFornecedor,loteInstitucional,validade,atualizadoEm:new Date().toISOString()};
+    if(novoKey!==oldKey) delete state.lotesConhecidos[oldKey];
+    state.lotesConhecidos[novoKey]=rec;
+    try{
+      if(dbApi){
+        await dbApi.doc('lotesConhecidos/'+encodeURIComponent(novoKey)).set(rec);
+        if(novoKey!==oldKey) await dbApi.doc('lotesConhecidos/'+encodeURIComponent(oldKey)).delete();
+      }
+      renderLotesConhecidosTable();
+      await propagarComplementoLote(old.codigo,loteFornecedor,loteInstitucional,validade);
+      mostrarToast('✅ Lote e validade atualizados.');
+    }catch(err){ console.error(err); mostrarToast('⚠️ Não foi possível sincronizar a alteração.', 'erro'); }
+    return;
+  }
+  if (btnDel){
+    const key = btnDel.dataset.key;
+    const ok=await confirmarEstilizado('Excluir lote aprendido?', '<div class="muted">O registro aprendido será removido. Isso não apaga automaticamente lotes já existentes no cadastro das caixas.</div>', 'Excluir', 'Cancelar');
+    if(!ok) return;
+    delete state.lotesConhecidos[key];
+    renderLotesConhecidosTable();
+    if (dbApi){ try{ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).delete(); mostrarToast('Registro removido.'); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
+  }
+});
+
+document.getElementById('btnReanalisarCadastros').addEventListener('click', ()=>{ renderAuditoriaCadastros(); mostrarToast('Auditoria atualizada.'); });
+document.querySelector('#auditoriaTable tbody').addEventListener('click', async e=>{
+  const btn=e.target.closest('.btnAcaoAuditoria'); if(!btn) return;
+  const r=(window.__auditoriaRows||[])[Number(btn.dataset.index)]; if(!r) return;
+  if(r.acao==='normalizar'){
+    const ok=await confirmarEstilizado('Padronizar nome?', '<div class="muted">Na caixa <b>'+esc(r.origem)+'</b>, alterar <b>'+esc(r.nome)+'</b> para <b>'+esc(r.padrao)+'</b>? Código e lotes não serão alterados.</div>', 'Padronizar', 'Cancelar');
+    if(!ok) return;
+    state.referencia[r.cid].itens[r.idx].medicamento=r.padrao;
+    try{ await salvarReferenciaAuditada(r.cid); renderAll(); mostrarToast('✅ Nome padronizado.'); }catch(err){ console.error(err); mostrarToast('Não foi possível sincronizar.', 'erro'); }
+    return;
+  }
+  const ok=await confirmarEstilizado('Excluir cadastro suspeito?', '<div class="muted">Você está excluindo <b>'+esc(r.nome||r.codigo)+'</b> de <b>'+esc(r.origem)+'</b>.<br><br>Motivo identificado: '+esc(r.motivo)+'.<br><br>O histórico já salvo não será apagado.</div>', 'Excluir', 'Cancelar');
+  if(!ok) return;
+  try{
+    if(r.tipo==='medicamento'){
+      state.referencia[r.cid].itens.splice(r.idx,1); await salvarReferenciaAuditada(r.cid);
+    }else if(r.tipo==='mapeamento'){
+      delete state.mapeamentos[r.key]; if(dbApi) await dbApi.doc('mapeamentos/'+encodeURIComponent(r.key)).delete();
+    }else if(r.tipo==='lote'){
+      delete state.lotesConhecidos[r.key]; if(dbApi) await dbApi.doc('lotesConhecidos/'+encodeURIComponent(r.key)).delete();
+    }
+    renderAll(); mostrarToast('✅ Cadastro suspeito removido.');
+  }catch(err){ console.error(err); mostrarToast('Não foi possível sincronizar.', 'erro'); }
 });
 
 function baixarArquivo(nome, conteudo, tipo){
@@ -2026,12 +2215,12 @@ function csvEscape(v){
   return '"' + s.replace(/"/g,'""') + '"';
 }
 document.getElementById('btnExportarCsv').addEventListener('click', ()=>{
-  const linhas = [['ID','Tipo','Data','Hora','Caixa','Responsável','Matrícula','Código','Medicamento','Qtd esperada','Qtd bipada','Lote fornecedor','Lote institucional','Validade','Resultado','Tipo divergência','Ação'].map(csvEscape).join(';')];
+  const linhas = [['ID curto','ID técnico','Tipo','Data','Hora','Caixa','Responsável','Matrícula','Código','Medicamento','Qtd esperada','Qtd bipada','Lote fornecedor','Lote institucional','Validade','Resultado','Tipo divergência','Ação'].map(csvEscape).join(';')];
   state.historico.forEach(h=>{
     h.itens.forEach(it=>{
       const lotes = (it.lotesBipados&&it.lotesBipados.length) ? it.lotesBipados : [{loteFornecedor:'',loteInstitucional:'',validade:''}];
       lotes.forEach(l=>{
-        linhas.push([h.confId,h.tipo,h.data,h.hora,h.caixaNome,h.responsavelNome,h.responsavelMatricula,it.codigo,it.medicamento,it.qtdEsperada,it.qtdBipada,l.loteFornecedor,l.loteInstitucional,l.validade?fmtDateBR(l.validade):'',it.resultado,it.tipoDivergencia,it.acao].map(csvEscape).join(';'));
+        linhas.push([histDisplayId(h),h.confId,h.tipo,h.data,h.hora,h.caixaNome,h.responsavelNome,h.responsavelMatricula,it.codigo,it.medicamento,it.qtdEsperada,it.qtdBipada,l.loteFornecedor,l.loteInstitucional,l.validade?fmtDateBR(l.validade):'',it.resultado,it.tipoDivergencia,it.acao].map(csvEscape).join(';'));
       });
     });
   });
