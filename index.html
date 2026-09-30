@@ -275,8 +275,8 @@ a{color:var(--primary);}
       </div>
       <input type="text" id="contagemBusca" placeholder="Buscar medicamento, código ou lote…" style="margin-bottom:12px;width:100%;">
       <div class="contagem-subview active" id="contagem-sub-geral">
-        <div class="muted" style="margin-bottom:12px;">Visão geral do estoque cadastrado nas caixas.</div>
-        <div class="table-wrap" id="contagemTableWrap"><table id="contagemTable"><thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Qtd. total</th><th>Caixas</th></tr></thead><tbody></tbody></table></div>
+        <div class="muted" style="margin-bottom:12px;">Controle geral: quantidade padrão de uma caixa × 6 caixas, comparada com o total cadastrado atualmente.</div>
+        <div class="table-wrap" id="contagemTableWrap"><table id="contagemTable"><thead><tr><th>Medicamento</th><th>Qtd. por caixa</th><th>Total esperado</th><th>Total cadastrado</th><th>Diferença</th><th>Situação</th><th>Distribuição</th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="contagem-subview" id="contagem-sub-lotes">
         <div class="muted" style="margin-bottom:12px;">Cada linha representa um lote físico. O total soma esse lote em todas as caixas, independentemente de onde esteja.</div>
@@ -1812,65 +1812,50 @@ function fillCaixaSelects(){
 
 /* ---------------- Contagem geral (todas as caixas) ---------------- */
 function renderContagem(){
-  const busca = ((document.getElementById('contagemBusca')||{}).value||'').trim().toLowerCase();
-  const grupos = [];
-
-  function acharGrupo(codigo, lote){
-    return grupos.find(g=>{
-      if(String(g.codigo)!==String(codigo)) return false;
-      const n=normalizarCamposLote(lote.loteFornecedor,lote.loteInstitucional);
-      if(n.loteFornecedor && g.loteFornecedor && String(n.loteFornecedor)===String(g.loteFornecedor)) return true;
-      if(n.loteInstitucional && g.loteInstitucional && String(n.loteInstitucional)===String(g.loteInstitucional)) return true;
-      return false;
-    });
-  }
-
+  const busca=((document.getElementById('contagemBusca')||{}).value||'').trim().toLowerCase();
+  const meds={};
   Object.entries(state.referencia).forEach(([caixaId,c])=>{
     (c.itens||[]).forEach(item=>{
-      const lotes=(item.lotes||[]).filter(l=>l.loteFornecedor||l.loteInstitucional||l.validade);
-      if(!lotes.length) return;
-      lotes.forEach(l=>{
-        const n=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
-        l={...l,loteFornecedor:n.loteFornecedor,loteInstitucional:n.loteInstitucional};
-        let g=acharGrupo(item.codigo,l);
-        if(!g){
-          g={codigo:item.codigo,medicamento:item.medicamento,loteFornecedor:l.loteFornecedor||null,loteInstitucional:l.loteInstitucional||null,validade:l.validade||null,qtdTotal:0,caixas:[]};
-          grupos.push(g);
-        } else {
-          g.loteFornecedor=g.loteFornecedor||l.loteFornecedor||null;
-          g.loteInstitucional=g.loteInstitucional||l.loteInstitucional||null;
-          g.validade=g.validade||l.validade||null;
-        }
-        const qtd=loteMaxEfetivo(item,l);
-        g.qtdTotal += qtd;
-        const existente=g.caixas.find(x=>x.id===caixaId);
-        if(existente) existente.qtd += qtd;
-        else g.caixas.push({id:caixaId,nome:c.nome,qtd});
-      });
+      const codigo=String(item.codigo||'');
+      if(!meds[codigo]) meds[codigo]={codigo,medicamento:item.medicamento,qtdPorCaixa:Number(item.qtde||0),totalAtual:0,caixas:[]};
+      const m=meds[codigo];
+      m.qtdPorCaixa=Math.max(m.qtdPorCaixa,Number(item.qtde||0));
+      const lotes=consolidarLotesDoItem((item.lotes||[]).filter(l=>l.loteFornecedor||l.loteInstitucional||l.validade));
+      let qtdCaixa=0;
+      if(lotes.length){
+        lotes.forEach(l=>{ qtdCaixa+=Number(loteMaxEfetivo(item,l)||0); });
+      }else{
+        qtdCaixa=Number(item.qtde||0);
+      }
+      m.totalAtual+=qtdCaixa;
+      m.caixas.push({nome:c.nome,qtd:qtdCaixa,esperado:Number(item.qtde||0)});
     });
   });
-
-  let rows=grupos;
-  if(busca) rows=rows.filter(r=>[r.codigo,r.medicamento,r.loteFornecedor,r.loteInstitucional].some(v=>String(v||'').toLowerCase().includes(busca)));
-  rows.sort((a,b)=>(a.medicamento||'').localeCompare(b.medicamento||'') || String(a.validade||'').localeCompare(String(b.validade||'')));
-
+  let rows=Object.values(meds).map(m=>{
+    m.totalEsperado=m.qtdPorCaixa*CAIXAS.length;
+    m.diferenca=m.totalAtual-m.totalEsperado;
+    return m;
+  });
+  if(busca) rows=rows.filter(r=>[r.codigo,r.medicamento].some(v=>String(v||'').toLowerCase().includes(busca)));
+  rows.sort((a,b)=>(a.medicamento||'').localeCompare(b.medicamento||''));
   const tbody=document.querySelector('#contagemTable tbody');
-  tbody.innerHTML=rows.map((r,idx)=>{
-    const cd=classeDias(diasParaVencer(r.validade));
-    const distribuicao=r.caixas.map(cx=>'<div style="display:flex;justify-content:space-between;gap:18px;padding:3px 0;"><span>'+esc(cx.nome)+'</span><b>'+cx.qtd+' un.</b></div>').join('');
-    const caixas=r.caixas.length===1
-      ? '<span class="muted">'+esc(r.caixas[0].nome)+'</span>'
-      : '<details><summary style="cursor:pointer;color:var(--primary);font-weight:700;">Ver '+r.caixas.length+' caixas</summary><div style="min-width:220px;margin-top:6px;">'+distribuicao+'</div></details>';
-    return '<tr>'+
-      '<td><b>'+esc(r.medicamento)+'</b><div class="muted">Código '+esc(r.codigo)+'</div></td>'+
-      '<td>'+esc(r.loteFornecedor||'—')+'</td>'+
-      '<td>'+esc(r.loteInstitucional||'—')+'</td>'+
-      '<td><span class="badge '+cd.cls+'">'+(r.validade?fmtDateBR(r.validade):'—')+'</span></td>'+
-      '<td><b style="font-size:16px;color:var(--primary);">'+r.qtdTotal+'</b> un.</td>'+
-      '<td>'+caixas+'</td>'+
+  tbody.innerHTML=rows.map(r=>{
+    const situacao=r.diferenca===0?'OK':(r.diferenca<0?'FALTAM '+Math.abs(r.diferenca):'EXCESSO DE '+r.diferenca);
+    const cls=r.diferenca===0?'ok':(r.diferenca<0?'bad':'warn');
+    const sinal=r.diferenca>0?'+':'';
+    const dist=r.caixas.map(cx=>'<div style="display:flex;justify-content:space-between;gap:18px;padding:3px 0"><span>'+esc(cx.nome)+'</span><b>'+cx.qtd+' / '+cx.esperado+'</b></div>').join('');
+    return '<tr>'+ 
+      '<td><b>'+esc(r.medicamento)+'</b><div class="muted">Código '+esc(r.codigo)+'</div></td>'+ 
+      '<td><b>'+r.qtdPorCaixa+'</b> un.</td>'+ 
+      '<td><b style="font-size:16px;color:var(--primary)">'+r.totalEsperado+'</b> un.<div class="muted">'+r.qtdPorCaixa+' × '+CAIXAS.length+' caixas</div></td>'+ 
+      '<td><b>'+r.totalAtual+'</b> un.</td>'+ 
+      '<td><b>'+(sinal+r.diferenca)+'</b> un.</td>'+ 
+      '<td><span class="badge '+cls+'">'+situacao+'</span></td>'+ 
+      '<td><details><summary style="cursor:pointer;color:var(--primary);font-weight:700">Ver caixas</summary><div style="min-width:240px;margin-top:6px"><div class="muted" style="margin-bottom:5px">Cadastrado / esperado</div>'+dist+'</div></details></td>'+ 
     '</tr>';
-  }).join('') || '<tr><td colspan="6" class="muted">Nenhum lote cadastrado.</td></tr>';
+  }).join('')||'<tr><td colspan="7" class="muted">Nenhum medicamento cadastrado.</td></tr>';
 }
+
 function renderContagemPorLote(){
   const busca=((document.getElementById('contagemBusca')||{}).value||'').trim().toLowerCase();
   const grupos=[];
