@@ -643,6 +643,7 @@ function normalizarCamposLote(loteFornecedor, loteInstitucional){
   let f=String(loteFornecedor||'').trim();
   let i=String(loteInstitucional||'').trim();
   const ehEinstein=v=>/^(14|15|16|17)\d{5}$/.test(String(v||'').trim());
+  const ehFornecedor=v=>{ const x=String(v||'').trim(); return !!x && !ehEinstein(x); };
   // Se o mesmo valor aparece nos dois campos, mantém apenas na classificação correta.
   if(f && i && f===i){
     if(ehEinstein(i)) f=''; else i='';
@@ -725,6 +726,8 @@ function lookupValidade(codigo, loteFornecedor, loteInstitucional){
   return m ? m.validade : null;
 }
 async function learnLote(codigo, loteFornecedor, loteInstitucional, validade){
+  const nl=normalizarCamposLote(loteFornecedor,loteInstitucional);
+  loteFornecedor=nl.loteFornecedor; loteInstitucional=nl.loteInstitucional;
   if (!codigo || (!loteFornecedor && !loteInstitucional) || !validade) return;
   const key = codigo+'_'+(loteFornecedor||'')+'_'+(loteInstitucional||'');
   state.lotesConhecidos[key] = {codigo, loteFornecedor, loteInstitucional, validade};
@@ -1637,10 +1640,11 @@ function renderLotesConhecidosTable(){
   const rows = Object.entries(state.lotesConhecidos);
   tbody.innerHTML = rows.map(([key, l])=>{
     const it = findItemAnyCaixa(l.codigo);
+    const nl=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
     return '<tr data-lotekey="'+esc(key)+'">'+
       '<td><b>'+esc(it?it.medicamento:l.codigo)+'</b><div class="muted">Código '+esc(l.codigo)+'</div></td>'+
-      '<td><input class="edit-loteF" type="text" value="'+esc(l.loteFornecedor||'')+'" placeholder="Fornecedor"></td>'+
-      '<td><input class="edit-loteI" type="text" value="'+esc(l.loteInstitucional||'')+'" placeholder="Einstein"></td>'+
+      '<td><input class="edit-loteF" type="text" value="'+esc(nl.loteFornecedor||'')+'" placeholder="Fornecedor"></td>'+
+      '<td><input class="edit-loteI" type="text" value="'+esc(nl.loteInstitucional||'')+'" placeholder="Einstein"></td>'+
       '<td><input class="edit-validade" type="date" value="'+norm(l.validade)+'"></td>'+
       '<td><div class="flex"><button class="btn btnSalvarLoteConhecido" data-key="'+esc(key)+'" style="padding:6px 10px;">Salvar</button><button class="btn danger btnDelLoteConhecido" data-key="'+esc(key)+'" style="padding:6px 10px;">✕</button></div></td></tr>';
   }).join('') || '<tr><td colspan="5" class="muted">Nenhum lote aprendido ainda.</td></tr>';
@@ -1787,6 +1791,38 @@ function renderContagem(){
   }).join('') || '<tr><td colspan="6" class="muted">Nenhum lote cadastrado.</td></tr>';
 }
 document.getElementById('contagemBusca').addEventListener('input', debounce(renderContagem, 200));
+
+async function corrigirLotesClassificadosErrado(){
+  let alterouReferencia=false, alterouConhecidos=false;
+  const caixasAlteradas=new Set();
+  Object.entries(state.referencia).forEach(([cid,c])=>{
+    (c.itens||[]).forEach(it=>(it.lotes||[]).forEach(l=>{
+      const n=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+      if((l.loteFornecedor||null)!==n.loteFornecedor || (l.loteInstitucional||null)!==n.loteInstitucional){
+        l.loteFornecedor=n.loteFornecedor; l.loteInstitucional=n.loteInstitucional;
+        alterouReferencia=true; caixasAlteradas.add(cid);
+      }
+    }));
+  });
+  const novos={};
+  Object.values(state.lotesConhecidos).forEach(l=>{
+    const n=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+    const rec={...l,loteFornecedor:n.loteFornecedor,loteInstitucional:n.loteInstitucional};
+    const key=rec.codigo+'_'+(rec.loteFornecedor||'')+'_'+(rec.loteInstitucional||'');
+    novos[key]=rec;
+    if((l.loteFornecedor||null)!==n.loteFornecedor || (l.loteInstitucional||null)!==n.loteInstitucional) alterouConhecidos=true;
+  });
+  if(alterouConhecidos) state.lotesConhecidos=novos;
+  if(dbApi){
+    for(const cid of caixasAlteradas){ const c=state.referencia[cid]; await dbApi.doc('referencia/'+cid).set({nome:c.nome,itens:c.itens}); }
+    if(alterouConhecidos){
+      const snap=await dbApi.collection('lotesConhecidos').get();
+      for(const d of snap.docs) await d.ref.delete();
+      for(const [key,rec] of Object.entries(novos)) await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).set(rec);
+    }
+  }
+  if(alterouReferencia||alterouConhecidos){ renderAll(); mostrarToast('✅ Lotes fornecedor/institucional corrigidos automaticamente.'); }
+}
 
 function renderAll(){
   fillCaixaSelects();
@@ -2001,6 +2037,7 @@ async function boot(){
   updateClock();
   setInterval(updateClock, 1000);
 setInterval(renderPendingBanner, 60000);
+setTimeout(()=>corrigirLotesClassificadosErrado().catch(console.error), 2500);
 
   try{
     if (typeof firebase !== 'undefined'){
@@ -2189,8 +2226,11 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
     const old=state.lotesConhecidos[oldKey];
     if(!old) return;
     const tr=btnSave.closest('tr');
-    const loteFornecedor=tr.querySelector('.edit-loteF').value.trim()||null;
-    const loteInstitucional=tr.querySelector('.edit-loteI').value.trim()||null;
+    const digitadoF=tr.querySelector('.edit-loteF').value.trim()||null;
+    const digitadoI=tr.querySelector('.edit-loteI').value.trim()||null;
+    const normalizado=normalizarCamposLote(digitadoF,digitadoI);
+    const loteFornecedor=normalizado.loteFornecedor;
+    const loteInstitucional=normalizado.loteInstitucional;
     const validade=tr.querySelector('.edit-validade').value||null;
     if(!loteFornecedor && !loteInstitucional){ mostrarToast('Informe ao menos um dos lotes.', 'erro'); return; }
     if(!validade){ mostrarToast('Informe a validade.', 'erro'); return; }
