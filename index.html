@@ -642,7 +642,7 @@ async function saveMapeamento(codigoLido, codigo){
 function normalizarCamposLote(loteFornecedor, loteInstitucional){
   let f=String(loteFornecedor||'').trim();
   let i=String(loteInstitucional||'').trim();
-  const ehEinstein=v=>/^(14|15|16|17)\d{5}$/.test(String(v||'').trim());
+  const ehEinstein=v=>/^\d{7}$/.test(String(v||'').trim());
   const ehFornecedor=v=>{ const x=String(v||'').trim(); return !!x && !ehEinstein(x); };
   // Se o mesmo valor aparece nos dois campos, mantém apenas na classificação correta.
   if(f && i && f===i){
