@@ -639,22 +639,42 @@ async function saveMapeamento(codigoLido, codigo){
   }
 }
 
+function normalizarCamposLote(loteFornecedor, loteInstitucional){
+  let f=String(loteFornecedor||'').trim();
+  let i=String(loteInstitucional||'').trim();
+  const ehEinstein=v=>/^(14|15|16|17)\d{5}$/.test(String(v||'').trim());
+  // Se o mesmo valor aparece nos dois campos, mantém apenas na classificação correta.
+  if(f && i && f===i){
+    if(ehEinstein(i)) f=''; else i='';
+  }
+  // Valor no campo Einstein fora do padrão institucional é tratado como fornecedor.
+  if(i && !ehEinstein(i)){
+    if(!f) f=i;
+    i='';
+  }
+  // Valor institucional digitado no campo fornecedor é movido para Einstein.
+  if(f && ehEinstein(f)){
+    if(!i) i=f;
+    f='';
+  }
+  return {loteFornecedor:f||null,loteInstitucional:i||null};
+}
+
 function getKnownLotes(codigo){
   // Consolida lotes de TODAS as caixas + aprendizados e remove duplicatas logicas.
   // Isso permite reconhecer que lote fornecedor e lote institucional pertencem ao mesmo lote fisico.
   const out = [];
   Object.values(state.referencia).forEach(c=>{
     (c.itens||[]).filter(it=>String(it.codigo)===String(codigo)).forEach(item=>{
-      (item.lotes||[]).forEach(l=>{ if(l.loteFornecedor||l.loteInstitucional) out.push({loteFornecedor:l.loteFornecedor||null, loteInstitucional:l.loteInstitucional||null, validade:l.validade||null}); });
+      (item.lotes||[]).forEach(l=>{ if(l.loteFornecedor||l.loteInstitucional) { const n=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional); out.push({loteFornecedor:n.loteFornecedor, loteInstitucional:n.loteInstitucional, validade:l.validade||null}); } });
     });
   });
   Object.values(state.lotesConhecidos).forEach(v=>{
-    if (String(v.codigo)===String(codigo)) out.push({loteFornecedor:v.loteFornecedor||null, loteInstitucional:v.loteInstitucional||null, validade:v.validade||null});
+    if (String(v.codigo)===String(codigo)) { const n=normalizarCamposLote(v.loteFornecedor,v.loteInstitucional); out.push({loteFornecedor:n.loteFornecedor, loteInstitucional:n.loteInstitucional, validade:v.validade||null}); }
   });
   const merged=[];
   out.forEach(l=>{
     let m=merged.find(x=>(l.loteFornecedor&&x.loteFornecedor===l.loteFornecedor)||(l.loteInstitucional&&x.loteInstitucional===l.loteInstitucional));
-    if(!m && l.validade) m=merged.find(x=>x.validade===l.validade && ((l.loteFornecedor&&!x.loteFornecedor)||(l.loteInstitucional&&!x.loteInstitucional)));
     if(m){ m.loteFornecedor=m.loteFornecedor||l.loteFornecedor; m.loteInstitucional=m.loteInstitucional||l.loteInstitucional; m.validade=m.validade||l.validade; }
     else merged.push({...l});
   });
@@ -662,10 +682,10 @@ function getKnownLotes(codigo){
 }
 
 function findComplementoLote(codigo, loteFornecedor, loteInstitucional, validade){
+  const n=normalizarCamposLote(loteFornecedor,loteInstitucional);
   return getKnownLotes(codigo).find(k=>
-    (loteFornecedor && k.loteFornecedor===loteFornecedor) ||
-    (loteInstitucional && k.loteInstitucional===loteInstitucional) ||
-    (validade && k.validade===validade && ((loteFornecedor&&!k.loteFornecedor)||(loteInstitucional&&!k.loteInstitucional)))
+    (n.loteFornecedor && k.loteFornecedor===n.loteFornecedor) ||
+    (n.loteInstitucional && k.loteInstitucional===n.loteInstitucional)
   ) || null;
 }
 
@@ -1713,13 +1733,9 @@ function renderContagem(){
   function acharGrupo(codigo, lote){
     return grupos.find(g=>{
       if(String(g.codigo)!==String(codigo)) return false;
-      if(lote.loteFornecedor && g.loteFornecedor && String(lote.loteFornecedor)===String(g.loteFornecedor)) return true;
-      if(lote.loteInstitucional && g.loteInstitucional && String(lote.loteInstitucional)===String(g.loteInstitucional)) return true;
-      // Só usa validade para unir registros incompletos do mesmo medicamento.
-      if(lote.validade && g.validade===lote.validade){
-        const umLadoIncompleto = (!lote.loteFornecedor || !lote.loteInstitucional || !g.loteFornecedor || !g.loteInstitucional);
-        if(umLadoIncompleto) return true;
-      }
+      const n=normalizarCamposLote(lote.loteFornecedor,lote.loteInstitucional);
+      if(n.loteFornecedor && g.loteFornecedor && String(n.loteFornecedor)===String(g.loteFornecedor)) return true;
+      if(n.loteInstitucional && g.loteInstitucional && String(n.loteInstitucional)===String(g.loteInstitucional)) return true;
       return false;
     });
   }
@@ -1729,6 +1745,8 @@ function renderContagem(){
       const lotes=(item.lotes||[]).filter(l=>l.loteFornecedor||l.loteInstitucional||l.validade);
       if(!lotes.length) return;
       lotes.forEach(l=>{
+        const n=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+        l={...l,loteFornecedor:n.loteFornecedor,loteInstitucional:n.loteInstitucional};
         let g=acharGrupo(item.codigo,l);
         if(!g){
           g={codigo:item.codigo,medicamento:item.medicamento,loteFornecedor:l.loteFornecedor||null,loteInstitucional:l.loteInstitucional||null,validade:l.validade||null,qtdTotal:0,caixas:[]};
@@ -1898,6 +1916,8 @@ async function atualizarCadastroComBipagem(itensBipados){
     // em vez de serem apenas acrescentados ao cadastro anterior.
     const consolidados=[];
     (bip.lotesBipados||[]).forEach(lb=>{
+      const norm=normalizarCamposLote(lb.loteFornecedor,lb.loteInstitucional);
+      lb={...lb,loteFornecedor:norm.loteFornecedor,loteInstitucional:norm.loteInstitucional};
       const comp=findComplementoLote(item.codigo,lb.loteFornecedor,lb.loteInstitucional,lb.validade);
       const atual={
         loteFornecedor:lb.loteFornecedor||(comp&&comp.loteFornecedor)||null,
