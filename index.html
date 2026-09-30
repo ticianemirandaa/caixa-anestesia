@@ -398,6 +398,7 @@ const state = {
   referencia: {},
   mapeamentos: {},
   lotesConhecidos: {},
+  mapaLotesGlobais: {},
   usuarios: {},
   statusCaixas: {},
   emUso: {},
@@ -661,6 +662,67 @@ function normalizarCamposLote(loteFornecedor, loteInstitucional){
   return {loteFornecedor:f||null,loteInstitucional:i||null};
 }
 
+function chaveMapaGlobal(loteFornecedor,loteInstitucional){
+  return String(loteFornecedor||'')+'__'+String(loteInstitucional||'');
+}
+function buscarMapaGlobal(loteFornecedor,loteInstitucional){
+  const n=normalizarCamposLote(loteFornecedor,loteInstitucional);
+  return Object.values(state.mapaLotesGlobais).find(m=>
+    (n.loteFornecedor && m.loteFornecedor===n.loteFornecedor) ||
+    (n.loteInstitucional && m.loteInstitucional===n.loteInstitucional)
+  ) || null;
+}
+function consolidarLotesDoItem(lotes){
+  const arr=(lotes||[]).map(l=>{
+    const n=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+    const g=buscarMapaGlobal(n.loteFornecedor,n.loteInstitucional);
+    return {...l,loteFornecedor:n.loteFornecedor||(g&&g.loteFornecedor)||null,loteInstitucional:n.loteInstitucional||(g&&g.loteInstitucional)||null,validade:l.validade||(g&&g.validade)||null};
+  }).filter(l=>l.loteFornecedor||l.loteInstitucional||l.validade||l.qtdeMax!=null);
+  const out=[];
+  for(const l of arr){
+    let alvo=out.find(x=>(l.loteFornecedor&&x.loteFornecedor===l.loteFornecedor)||(l.loteInstitucional&&x.loteInstitucional===l.loteInstitucional));
+    if(!alvo && l.validade){
+      // No cadastro manual, duas linhas complementares na mesma validade representam o mesmo lote físico.
+      alvo=out.find(x=>x.validade===l.validade && ((l.loteFornecedor&&!l.loteInstitucional&&!x.loteFornecedor&&x.loteInstitucional)||(l.loteInstitucional&&!l.loteFornecedor&&!x.loteInstitucional&&x.loteFornecedor)));
+    }
+    if(alvo){
+      alvo.loteFornecedor=alvo.loteFornecedor||l.loteFornecedor;
+      alvo.loteInstitucional=alvo.loteInstitucional||l.loteInstitucional;
+      alvo.validade=alvo.validade||l.validade;
+      if(alvo.qtdeMax==null && l.qtdeMax!=null) alvo.qtdeMax=l.qtdeMax;
+      else if(alvo.qtdeMax!=null && l.qtdeMax!=null) alvo.qtdeMax=Math.max(Number(alvo.qtdeMax),Number(l.qtdeMax));
+    }else out.push({...l});
+  }
+  return out;
+}
+async function salvarMapaGlobalEPropagar(loteFornecedor,loteInstitucional,validade){
+  const n=normalizarCamposLote(loteFornecedor,loteInstitucional);
+  if(!n.loteFornecedor || !n.loteInstitucional) return false;
+  const existente=buscarMapaGlobal(n.loteFornecedor,n.loteInstitucional);
+  const rec={loteFornecedor:n.loteFornecedor,loteInstitucional:n.loteInstitucional,validade:validade||(existente&&existente.validade)||null,atualizadoEm:new Date().toISOString()};
+  const key=chaveMapaGlobal(rec.loteFornecedor,rec.loteInstitucional);
+  state.mapaLotesGlobais[key]=rec;
+  const caixasAlteradas=new Set();
+  Object.entries(state.referencia).forEach(([cid,c])=>{
+    (c.itens||[]).forEach(it=>{
+      (it.lotes||[]).forEach(l=>{
+        const nl=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+        if(nl.loteFornecedor===rec.loteFornecedor || nl.loteInstitucional===rec.loteInstitucional){
+          l.loteFornecedor=rec.loteFornecedor; l.loteInstitucional=rec.loteInstitucional;
+          if(rec.validade) l.validade=rec.validade;
+          caixasAlteradas.add(cid);
+        }
+      });
+      it.lotes=consolidarLotesDoItem(it.lotes);
+    });
+  });
+  if(dbApi){
+    await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(key)).set(rec);
+    for(const cid of caixasAlteradas){ const c=state.referencia[cid]; await dbApi.doc('referencia/'+cid).set({nome:c.nome,itens:c.itens}); }
+  }
+  return true;
+}
+
 function getKnownLotes(codigo){
   // Consolida lotes de TODAS as caixas + aprendizados e remove duplicatas logicas.
   // Isso permite reconhecer que lote fornecedor e lote institucional pertencem ao mesmo lote fisico.
@@ -684,6 +746,8 @@ function getKnownLotes(codigo){
 
 function findComplementoLote(codigo, loteFornecedor, loteInstitucional, validade){
   const n=normalizarCamposLote(loteFornecedor,loteInstitucional);
+  const global=buscarMapaGlobal(n.loteFornecedor,n.loteInstitucional);
+  if(global) return global;
   return getKnownLotes(codigo).find(k=>
     (n.loteFornecedor && k.loteFornecedor===n.loteFornecedor) ||
     (n.loteInstitucional && k.loteInstitucional===n.loteInstitucional)
@@ -731,6 +795,7 @@ async function learnLote(codigo, loteFornecedor, loteInstitucional, validade){
   if (!codigo || (!loteFornecedor && !loteInstitucional) || !validade) return;
   const key = codigo+'_'+(loteFornecedor||'')+'_'+(loteInstitucional||'');
   state.lotesConhecidos[key] = {codigo, loteFornecedor, loteInstitucional, validade};
+  if(loteFornecedor&&loteInstitucional) await salvarMapaGlobalEPropagar(loteFornecedor,loteInstitucional,validade);
   if (dbApi){
     try{ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).set({codigo, loteFornecedor, loteInstitucional, validade, atualizadoEm:new Date().toISOString()}); }
     catch(e){ console.error(e); }
@@ -1187,7 +1252,7 @@ function coletarFormularioCadastro(){
       lotes.push({loteFornecedor:lF||null, loteInstitucional:lI||null, validade: val||null, qtdeMax: qMax===''?null:parseInt(qMax,10)});
     });
     if (!medicamento && !codigo) return;
-    itens.push({codigo: codigo||null, medicamento: medicamento||'(sem nome)', qtde: isNaN(qtde)?0:qtde, lotes});
+    itens.push({codigo: codigo||null, medicamento: medicamento||'(sem nome)', qtde: isNaN(qtde)?0:qtde, lotes:consolidarLotesDoItem(lotes)});
   });
   return itens;
 }
@@ -1199,11 +1264,13 @@ function novoItemVazio(){
   ]};
 }
 function renderCadastroList(){
-  document.getElementById('cadastroTitulo').textContent = 'Cadastro esperado — ' + currentCaixa().nome;
+  document.getElementById('cadastroTitulo').textContent = 'Cadastro esperado — ' + currentCaixa().nome + ' · 1 linha por lote físico';
   const nomeInput = document.getElementById('nomeCaixaInput');
   if (document.activeElement !== nomeInput) nomeInput.value = currentCaixa().nome;
   const wrap = document.getElementById('cadastroList');
-  const itens = currentCaixa().itens || [];
+  // Exibe cada lote físico em uma única linha. Linhas complementares
+  // (fornecedor em uma e institucional em outra) são consolidadas antes de renderizar.
+  const itens = (currentCaixa().itens || []).map(item=>({...item,lotes:consolidarLotesDoItem(item.lotes)}));
   wrap.innerHTML = itens.map((item,idx)=>{
     const somaLotes = (item.lotes||[]).reduce((s,l)=> s + (l.qtdeMax!=null && l.qtdeMax!=='' ? Number(l.qtdeMax) : 0), 0);
     const avisoSoma = somaLotes>0 && somaLotes!==item.qtde ? '<div class="muted" style="color:var(--warn);">⚠️ soma dos máximos por lote ('+somaLotes+') difere da quantidade esperada total ('+item.qtde+')</div>' : '';
@@ -1326,11 +1393,19 @@ document.getElementById('btnSalvarCadastro').addEventListener('click', async ()=
   const caixa = currentCaixa();
   const nome = document.getElementById('nomeCaixaInput').value.trim() || caixa.nome;
   state.referencia[state.caixaId] = {nome, itens};
-  renderAll();
-  if (dbApi){
-    try{ await dbApi.doc('referencia/'+state.caixaId).set({nome, itens}); mostrarToast('✅ Cadastro salvo e sincronizado.'); }
-    catch(e){ console.error(e); mostrarToast('⚠️ Salvo localmente, mas não sincronizou agora.', 'erro'); }
-  } else { mostrarToast('⚠️ Salvo localmente (sem sincronização).', 'erro'); }
+  try{
+    if(dbApi) await dbApi.doc('referencia/'+state.caixaId).set({nome,itens});
+    let mapas=0;
+    for(const it of itens){
+      for(const l of (it.lotes||[])){
+        if(l.loteFornecedor&&l.loteInstitucional){
+          if(await salvarMapaGlobalEPropagar(l.loteFornecedor,l.loteInstitucional,l.validade)) mapas++;
+        }
+      }
+    }
+    renderAll();
+    mostrarToast('✅ Cadastro salvo. Lotes equivalentes foram unidos em uma única linha. '+(mapas?mapas+' vínculo(s) aplicado(s) em todas as caixas e medicamentos.':'Sem novo vínculo global.'));
+  }catch(e){ console.error(e); mostrarToast('⚠️ Salvo localmente, mas não sincronizou agora.', 'erro'); }
 });
 
 /* ---------------- Alertas ---------------- */
@@ -1865,6 +1940,7 @@ function subscribeReferencia(){ dbApi.collection('referencia').onSnapshot(snap=>
 function subscribeHistorico(){ dbApi.collection('historico').orderBy('criadoEm','desc').limit(400).onSnapshot(snap=>{ state.historico = snap.docs.map(d=>d.data()); renderHistorico(); renderRepInfoPanel(); }, err=>console.error(err)); }
 function subscribeMapeamentos(){ dbApi.collection('mapeamentos').onSnapshot(snap=>{ state.mapeamentos = {}; snap.docs.forEach(d=>{ state.mapeamentos[decodeURIComponent(d.id)] = d.data(); }); renderMapeamentoTable(); }, err=>console.error(err)); }
 function subscribeLotesConhecidos(){ dbApi.collection('lotesConhecidos').onSnapshot(snap=>{ state.lotesConhecidos = {}; snap.docs.forEach(d=>{ state.lotesConhecidos[decodeURIComponent(d.id)] = d.data(); }); renderLotesConhecidosTable(); }, err=>console.error(err)); }
+function subscribeMapaLotesGlobais(){ dbApi.collection('mapaLotesGlobais').onSnapshot(snap=>{ state.mapaLotesGlobais={}; snap.docs.forEach(d=>{ state.mapaLotesGlobais[decodeURIComponent(d.id)]=d.data(); }); },err=>console.error(err)); }
 function subscribeUsuarios(){
   return new Promise((resolve)=>{
     let primeira = true;
@@ -2058,6 +2134,7 @@ setTimeout(()=>corrigirLotesClassificadosErrado().catch(console.error), 2500);
       subscribeHistorico();
       subscribeMapeamentos();
       subscribeLotesConhecidos();
+      subscribeMapaLotesGlobais();
       await subscribeUsuarios();
       subscribeStatusCaixas();
       subscribeEmUso();
