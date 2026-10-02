@@ -1152,7 +1152,10 @@ function computeStatus(item, scan){
   const modoReposicao = (state.modo === 'REPOSICAO');
   let loteDiverge=false, validadeDiverge=false, excessoLote=false;
   let detalhes=null;
-  if (!modoReposicao){
+  const totalItemAtingido = scan.qtd >= item.qtde;
+  // Para medicamentos com mais de um lote, valida lote e validade somente
+  // depois de atingir a quantidade total esperada do medicamento.
+  if (!modoReposicao && totalItemAtingido){
     Object.values(scan.lotes).forEach(entry=>{
       const match=localizarLoteCadastrado(item,entry);
       const esteLoteDiverge=!match;
