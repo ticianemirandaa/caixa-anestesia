@@ -454,6 +454,23 @@ function classeDias(dias){
 }
 function loteKey(lF, lI){ if(!lF && !lI) return '(sem lote)'; return (lF||'—')+'|'+(lI||'—'); }
 function currentCaixa(){ return state.referencia[state.caixaId] || {nome:'', itens:[]}; }
+// A ordem de bipagem de todas as caixas segue a sequencia cadastrada na Caixa 1.
+// Esta funcao cria apenas uma copia ordenada para exibicao/bipagem: nao altera o
+// cadastro, os lotes, as validades, as quantidades nem os dados proprios das caixas.
+function itensNaOrdemDeBipagem(caixa){
+  const itens = [...(((caixa || currentCaixa()).itens) || [])];
+  const caixaPadrao = state.referencia['c1'];
+  if (!caixaPadrao || !Array.isArray(caixaPadrao.itens)) return itens;
+  const posicao = new Map(caixaPadrao.itens.map((item, indice)=>[String(item.codigo), indice]));
+  return itens
+    .map((item, indiceOriginal)=>({item, indiceOriginal}))
+    .sort((a,b)=>{
+      const pa = posicao.has(String(a.item.codigo)) ? posicao.get(String(a.item.codigo)) : Number.MAX_SAFE_INTEGER;
+      const pb = posicao.has(String(b.item.codigo)) ? posicao.get(String(b.item.codigo)) : Number.MAX_SAFE_INTEGER;
+      return pa - pb || a.indiceOriginal - b.indiceOriginal;
+    })
+    .map(x=>x.item);
+}
 function findItemByCodigo(caixaId, codigo){
   const c = state.referencia[caixaId];
   if(!c) return null;
@@ -982,7 +999,7 @@ function itemFoiBipado(item){
   return !!(s && s.qtd >= item.qtde);
 }
 function proximoItemPendente(){
-  const itens = currentCaixa().itens || [];
+  const itens = itensNaOrdemDeBipagem();
   return itens.find(it => !itemFoiBipado(it) && !state.pulados.has(String(it.codigo)));
 }
 function renderProximoItem(){
@@ -1187,7 +1204,7 @@ function renderBipagemTable(){
   document.getElementById('scanTitulo').textContent = state.modo==='REPOSICAO' ? 'Bipar item da reposição' : 'Bipar item da conferência';
   document.getElementById('btnFinalizar').textContent = state.modo==='REPOSICAO' ? 'Finalizar reposição' : 'Finalizar conferência';
   const tbody = document.querySelector('#bipagemTable tbody');
-  const itens = currentCaixa().itens;
+  const itens = itensNaOrdemDeBipagem();
   let conformes=0, divergentes=0, pendentes=0;
   tbody.innerHTML = itens.map(item=>{
     const scan = state.session[String(item.codigo)];
@@ -2266,7 +2283,7 @@ document.getElementById('btnReiniciar').addEventListener('click', async ()=>{
 
 document.getElementById('btnFinalizar').addEventListener('click', async ()=>{
   const caixa = currentCaixa();
-  const pendentesLista = caixa.itens.filter(it => !itemFoiBipado(it));
+  const pendentesLista = itensNaOrdemDeBipagem(caixa).filter(it => !itemFoiBipado(it));
   if (pendentesLista.length>0){
     const corpo = '<div class="muted">O ideal é bipar todos os itens da caixa. Ainda faltam:</div>' +
       '<ul style="margin:8px 0 0 18px; padding:0;">'+pendentesLista.map(p=>'<li>'+esc(p.medicamento)+'</li>').join('')+'</ul>';
