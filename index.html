@@ -1118,10 +1118,17 @@ function computeStatus(item, scan){
     // Na reposição não comparamos com o cadastro antigo: é esperado que o lote mude.
     // Só a conferência valida se o que está lá bate com o que foi registrado.
     Object.values(scan.lotes).forEach(entry=>{
-      const match = (item.lotes||[]).find(e=>
-        (entry.loteFornecedor && e.loteFornecedor && String(e.loteFornecedor)===String(entry.loteFornecedor)) ||
-        (entry.loteInstitucional && e.loteInstitucional && String(e.loteInstitucional)===String(entry.loteInstitucional))
-      );
+      // Compara o lote de forma normalizada e aceita o mesmo lote mesmo que um registro
+      // antigo tenha sido salvo no campo fornecedor e o novo no campo institucional (ou vice-versa).
+      const canonLote = v => String(v ?? '')
+        .normalize('NFKC')
+        .replace(/[\u00A0\u200B-\u200D\uFEFF\s]/g, '')
+        .toUpperCase();
+      const lotesBipados = [entry.loteFornecedor, entry.loteInstitucional].map(canonLote).filter(Boolean);
+      const match = (item.lotes||[]).find(e=>{
+        const lotesCadastrados = [e.loteFornecedor, e.loteInstitucional].map(canonLote).filter(Boolean);
+        return lotesBipados.some(lote => lotesCadastrados.includes(lote));
+      });
       if (!match) loteDiverge = true;
       else {
         if (entry.validade && norm(entry.validade)!==norm(match.validade)) validadeDiverge = true;
