@@ -1409,6 +1409,36 @@ function biparCadastro(raw){
     idx = itens.findIndex(it=>String(it.codigo)===String(state.mapeamentos[codigoDetectado].codigo));
   }
   if (idx>=0){
+    // O medicamento ja existe: a bipagem deve incluir o lote lido no cadastro,
+    // e nao apenas localizar/destacar o item.
+    if (loteFornecedor || loteInstitucional || validade){
+      const item = itens[idx];
+      const lido = normalizarCamposLote(loteFornecedor, loteInstitucional);
+      const canonF = canonLoteComparacao(lido.loteFornecedor);
+      const canonI = canonLoteComparacao(lido.loteInstitucional);
+      let loteExistente = (item.lotes || []).find(l => {
+        const n = normalizarCamposLote(l.loteFornecedor, l.loteInstitucional);
+        return (canonF && canonLoteComparacao(n.loteFornecedor) === canonF) ||
+               (canonI && canonLoteComparacao(n.loteInstitucional) === canonI);
+      });
+      if (loteExistente){
+        loteExistente.loteFornecedor = loteExistente.loteFornecedor || lido.loteFornecedor;
+        loteExistente.loteInstitucional = loteExistente.loteInstitucional || lido.loteInstitucional;
+        loteExistente.validade = validade || loteExistente.validade || null;
+        mostrarToast('✅ Lote institucional localizado e atualizado no cadastro.');
+      } else {
+        item.lotes = item.lotes || [];
+        item.lotes.push({
+          loteFornecedor: lido.loteFornecedor,
+          loteInstitucional: lido.loteInstitucional,
+          validade: validade || null,
+          qtdeMax: null
+        });
+        mostrarToast('✅ Lote institucional adicionado ao cadastro. Clique em Salvar cadastro desta caixa.');
+      }
+      item.lotes = consolidarLotesDoItem(item.lotes);
+      currentCaixa().itens = itens;
+    }
     renderCadastroList();
     highlightCadastroItem(idx);
   } else {
