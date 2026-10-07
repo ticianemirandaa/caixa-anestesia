@@ -1005,7 +1005,7 @@ async function resolveScan(raw){
   if(loteFornecedor&&loteInstitucional&&!buscarMapaGlobal(loteFornecedor,loteInstitucional)){
     const item0=findItemAnyCaixa(codigo);
     const ok=await confirmarEstilizado('Confirmar vínculo dos lotes?',
-      '<div class="muted">A etiqueta institucional trouxe as duas informações na mesma bipagem.<br><br>Medicamento: <b>'+esc(item0?item0.medicamento:codigo)+'</b><br>Lote fornecedor: <b>'+esc(loteFornecedor)+'</b><br>Lote institucional: <b>'+esc(loteInstitucional)+'</b><br>'+(validade?'Validade: <b>'+esc(fmtDate(validade))+'</b><br>':'')+'<br>Confirme para salvar este vínculo global.</div>',
+      '<div class="muted">A etiqueta institucional trouxe as duas informações na mesma bipagem.<br><br>Medicamento: <b>'+esc(item0?item0.medicamento:codigo)+'</b><br>Lote fornecedor: <b>'+esc(loteFornecedor)+'</b><br>Lote institucional: <b>'+esc(loteInstitucional)+'</b><br>'+(validade?'Validade: <b>'+esc(fmtDateBR(validade))+'</b><br>':'')+'<br>Confirme para salvar este vínculo global.</div>',
       'Confirmar vínculo','Cancelar');
     if(!ok) return null;
   }
