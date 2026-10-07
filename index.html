@@ -476,31 +476,50 @@ function findItemByCodigo(caixaId, codigo){
   if(!c) return null;
   return c.itens.find(it => String(it.codigo)===String(codigo)) || null;
 }
-function classificarValorLote(valor){
-  const v=String(valor||'').trim();
-  if(!v) return {loteFornecedor:null,loteInstitucional:null};
-  // Regra oficial: exatamente 7 numeros = institucional; qualquer outro formato = fornecedor.
-  if(/^\d{7}$/.test(v)) return {loteFornecedor:null,loteInstitucional:v};
-  return {loteFornecedor:v,loteInstitucional:null};
-}
-function combinarCamposLote(base, extra){
-  return {
-    loteFornecedor:(base&&base.loteFornecedor)||(extra&&extra.loteFornecedor)||null,
-    loteInstitucional:(base&&base.loteInstitucional)||(extra&&extra.loteInstitucional)||null
-  };
-}
 function parseCodigoInterno(payload){
-  // Formato interno: 6 digitos do codigo do material + preenchimento + lote(s).
-  // Preserva a leitura antiga do final, mas aplica a regra oficial de classificacao.
-  const limpo=String(payload||'').replace(/[^0-9A-Za-z]/g,'');
-  const codigo=limpo.slice(0,6);
-  const restante=limpo.slice(6);
-  const ultimos8=restante.slice(-8);
-  const ultimos7=restante.slice(-7);
-  let lotes={loteFornecedor:null,loteInstitucional:null};
-  if(/^5\d{7}$/.test(ultimos8)) lotes=combinarCamposLote(lotes,classificarValorLote(ultimos8));
-  else if(/^\d{7}$/.test(ultimos7)) lotes=combinarCamposLote(lotes,classificarValorLote(ultimos7));
-  return {codigo,...lotes};
+  // Formato interno: 6 dígitos do código do material + preenchimento + o lote no final.
+  // Lote institucional: normalmente 7 dígitos (começa com 13, 14, 15, 16...).
+  // Lote fornecedor: normalmente 8 dígitos começando com "5" (mesmo padrão visto nos códigos GS1).
+  const codigo = payload.slice(0,6);
+  const ultimos8 = payload.slice(-8);
+  const ultimos7 = payload.slice(-7);
+  if (/^5\d{7}$/.test(ultimos8)){
+    return {codigo, loteFornecedor: ultimos8, loteInstitucional: null};
+  }
+  return {codigo, loteFornecedor: null, loteInstitucional: ultimos7};
+}
+function extrairLoteInstitucionalEtiqueta(raw, codigoEsperado){
+  const texto=String(raw||'').normalize('NFKC');
+  const codigo=String(codigoEsperado||'').replace(/\D/g,'');
+  const candidatos=[];
+  // Bloco interno completo: ]d1 + codigo Einstein (6) + 000 + lote institucional (7).
+  const reD1=/\]d1(\d{6})000(\d{7})(?=\D|$)/gi;
+  let m;
+  while((m=reD1.exec(texto))){
+    if(!codigo || m[1]===codigo) candidatos.push(m[2]);
+  }
+  // Alguns leitores retiram o prefixo AIM, mas mantêm codigo + 000 + lote.
+  if(codigo){
+    const reCodigo=new RegExp('(?:^|\\D)'+codigo+'000(\\d{7})(?=\\D|$)','g');
+    while((m=reCodigo.exec(texto))) candidatos.push(m[1]);
+  }
+  // Formato institucional delimitado: 000 + 7 números. Não procura dentro do GS1 puro,
+  // para não confundir zeros do GTIN com lote institucional.
+  if(/\]d1/i.test(texto) || /[\r\n\t|;]/.test(texto)){
+    const reDelim=/(?:^|[\r\n\t|; ])000(\d{7})(?=\D|$)/g;
+    while((m=reDelim.exec(texto))) candidatos.push(m[1]);
+  }
+  return candidatos.find(v=>/^\d{7}$/.test(v))||null;
+}
+function dividirConteudoEtiqueta(raw){
+  const texto=String(raw||'').trim();
+  // Mantém todo o conteúdo para procurar o lote institucional, mas entrega ao GS1
+  // somente o bloco ]d2/GS1, evitando que um bloco interno concatenado seja engolido pelo AI 10.
+  const inicioGS1=texto.search(/\](?:d2|C1|Q3)/i);
+  if(inicioGS1<0) return {textoCompleto:texto, blocoGS1:texto};
+  const resto=texto.slice(inicioGS1);
+  const proximo=resto.slice(3).search(/\]d1/i);
+  return {textoCompleto:texto, blocoGS1:(proximo>=0?resto.slice(0,proximo+3):resto).trim()};
 }
 function analisarPrefixo(raw){
   // Identificadores de simbologia (AIM) tipo ]d1, ]d2, ]C1, ]Q3 etc.
@@ -618,7 +637,7 @@ function parseGS1(raw){
   }
   const out = {};
   if (found['01']) out.gtin = found['01'].replace(/\D/g,'');
-  if (found['10']) out.lote = found['10'];
+  if (found['10']) out.lote = String(found['10']).replace(/[\x00-\x20]+$/g,'').trim();
   if (found['17'] && /^\d{6}$/.test(found['17'])) {
     const yy = found['17'].slice(0,2), mm = found['17'].slice(2,4);
     let dd = found['17'].slice(4,6);
@@ -629,9 +648,7 @@ function parseGS1(raw){
     out.validade = (2000+parseInt(yy,10))+'-'+mm+'-'+dd;
   }
   if (found['21']) out.serial = found['21'];
-  // Algumas etiquetas institucionais completas trazem o segundo lote no AI 21.
-  // O valor continua separado do serial bruto e sera classificado pela regra dos 7 digitos.
-  return (out.gtin || out.lote || out.serial || out.validade) ? out : null;
+  return (out.gtin || out.lote || out.validade) ? out : null;
 }
 
 /* ---------------- Modal helper ---------------- */
@@ -929,89 +946,73 @@ document.addEventListener('click', (e)=>{
 
 /* ---------------- Scan resolution (shared by reposição/conferência/decodificador) ---------------- */
 async function resolveScan(raw){
-  raw = (raw||'').trim();
-  if (!raw) return null;
-  const {payload, temSinalGS1} = analisarPrefixo(raw);
-  let codigo=null, loteFornecedor=null, loteInstitucional=null, validade=null;
-  const gs1 = parseGS1(raw);
-  const interno = /^\d{13,}$/.test(payload) ? parseCodigoInterno(payload) : null;
+  raw=(raw||'').trim();
+  if(!raw) return null;
+  const partes=dividirConteudoEtiqueta(raw);
+  const {payload,temSinalGS1}=analisarPrefixo(partes.blocoGS1);
+  let codigo=null,loteFornecedor=null,loteInstitucional=null,validade=null;
 
-  // A etiqueta institucional completa pode misturar o identificador interno com AIs GS1.
-  // Por isso os dois resultados sao combinados, em vez de um formato excluir o outro.
-  if (temSinalGS1 && gs1){
-    const codigoLido=gs1.gtin || (interno&&interno.codigo) || raw;
-    const productCodigo=await resolveCodigoProduto(codigoLido, gs1.gtin?' (código de barras / GTIN)':'');
+  // Primeiro tenta a parte GS1 da etiqueta completa: GTIN, validade e lote fornecedor (AI 10).
+  const gs1=parseGS1(partes.blocoGS1);
+  if(temSinalGS1 && gs1 && (gs1.gtin||gs1.lote||gs1.validade)){
+    const productCodigo=await resolveCodigoProduto(gs1.gtin||partes.blocoGS1,gs1.gtin?' (código de barras / GTIN)':'');
     if(!productCodigo) return null;
     codigo=productCodigo;
-    let lotes={loteFornecedor:null,loteInstitucional:null};
-    lotes=combinarCamposLote(lotes,classificarValorLote(gs1.lote));
-    lotes=combinarCamposLote(lotes,classificarValorLote(gs1.serial));
-    lotes=combinarCamposLote(lotes,interno);
-    loteFornecedor=lotes.loteFornecedor;
-    loteInstitucional=lotes.loteInstitucional;
+    loteFornecedor=gs1.lote||null;
     validade=gs1.validade||null;
-  } else if (interno){
-    const loteLido=interno.loteFornecedor||interno.loteInstitucional;
-    const productCodigo=await resolveCodigoProduto(interno.codigo, ' (código interno · lote lido: '+(loteLido||'não identificado')+')');
+    // Na mesma entrada, procura o bloco institucional codigo + 000 + 7 números.
+    loteInstitucional=extrairLoteInstitucionalEtiqueta(partes.textoCompleto,codigo);
+  }else if(!temSinalGS1 && /^\d{13,}$/.test(payload)){
+    const interno=parseCodigoInterno(payload);
+    const productCodigo=await resolveCodigoProduto(interno.codigo,' (código interno · lote lido: '+(interno.loteFornecedor||interno.loteInstitucional||'')+')');
     if(!productCodigo) return null;
     codigo=productCodigo;
     loteFornecedor=interno.loteFornecedor;
-    loteInstitucional=interno.loteInstitucional;
-  } else if (gs1 && (gs1.lote || gs1.serial || gs1.validade)){
-    const productCodigo=await resolveCodigoProduto(raw);
-    if(!productCodigo) return null;
-    codigo=productCodigo;
-    let lotes={loteFornecedor:null,loteInstitucional:null};
-    lotes=combinarCamposLote(lotes,classificarValorLote(gs1.lote));
-    lotes=combinarCamposLote(lotes,classificarValorLote(gs1.serial));
-    loteFornecedor=lotes.loteFornecedor;
-    loteInstitucional=lotes.loteInstitucional;
-    validade=gs1.validade||null;
-  } else {
+    loteInstitucional=extrairLoteInstitucionalEtiqueta(partes.textoCompleto,codigo)||interno.loteInstitucional;
+  }else{
     const productCodigo=await resolveCodigoProduto(raw);
     if(!productCodigo) return null;
     codigo=productCodigo;
     const item2=findItemAnyCaixa(codigo);
     const entrada=await promptLoteValidade(item2);
     if(!entrada) return null;
-    const n=normalizarCamposLote(entrada.loteFornecedor,entrada.loteInstitucional);
-    loteFornecedor=n.loteFornecedor;
-    loteInstitucional=n.loteInstitucional;
+    loteFornecedor=entrada.loteFornecedor;
+    loteInstitucional=entrada.loteInstitucional;
     validade=entrada.validade;
-  }
-
-  // Procura tambem lotes de 7 digitos claramente delimitados na etiqueta completa.
-  // Isso recupera o lote institucional quando o leitor o envia fora dos AIs 10/21.
-  if(!loteInstitucional){
-    const candidatos=(payload.match(/(?:^|\D)(\d{7})(?=\D|$)/g)||[])
-      .map(x=>(x.match(/\d{7}/)||[])[0]).filter(Boolean);
-    const candidato=candidatos.find(v=>v!==String(codigo));
-    if(candidato) loteInstitucional=candidato;
   }
 
   const normalizados=normalizarCamposLote(loteFornecedor,loteInstitucional);
   loteFornecedor=normalizados.loteFornecedor;
   loteInstitucional=normalizados.loteInstitucional;
-  if (!validade){
-    const known = lookupValidade(codigo, loteFornecedor, loteInstitucional);
-    if (known) validade = known;
-    else if (loteFornecedor || loteInstitucional){
-      const item0 = findItemAnyCaixa(codigo);
-      const v = await promptValidadeOnly(item0?item0.medicamento:'', loteFornecedor||loteInstitucional||'');
-      if (!v) return null;
-      validade = v;
+  const complemento=findComplementoLote(codigo,loteFornecedor,loteInstitucional,validade);
+  if(complemento){
+    loteFornecedor=loteFornecedor||complemento.loteFornecedor;
+    loteInstitucional=loteInstitucional||complemento.loteInstitucional;
+    validade=validade||complemento.validade;
+  }
+  if(!validade){
+    const known=lookupValidade(codigo,loteFornecedor,loteInstitucional);
+    if(known) validade=known;
+    else if(loteFornecedor||loteInstitucional){
+      const item0=findItemAnyCaixa(codigo);
+      const v=await promptValidadeOnly(item0?item0.medicamento:'',loteFornecedor||loteInstitucional||'');
+      if(!v) return null;
+      validade=v;
     }
   }
-  const complemento = findComplementoLote(codigo, loteFornecedor, loteInstitucional, validade);
-  if (complemento){
-    loteFornecedor = loteFornecedor || complemento.loteFornecedor;
-    loteInstitucional = loteInstitucional || complemento.loteInstitucional;
-    validade = validade || complemento.validade;
+
+  // Novo vínculo encontrado na própria etiqueta institucional: confirmar antes de gravar globalmente.
+  if(loteFornecedor&&loteInstitucional&&!buscarMapaGlobal(loteFornecedor,loteInstitucional)){
+    const item0=findItemAnyCaixa(codigo);
+    const ok=await confirmarEstilizado('Confirmar vínculo dos lotes?',
+      '<div class="muted">A etiqueta institucional trouxe as duas informações na mesma bipagem.<br><br>Medicamento: <b>'+esc(item0?item0.medicamento:codigo)+'</b><br>Lote fornecedor: <b>'+esc(loteFornecedor)+'</b><br>Lote institucional: <b>'+esc(loteInstitucional)+'</b><br>'+(validade?'Validade: <b>'+esc(fmtDate(validade))+'</b><br>':'')+'<br>Confirme para salvar este vínculo global.</div>',
+      'Confirmar vínculo','Cancelar');
+    if(!ok) return null;
   }
-  await learnLote(codigo, loteFornecedor, loteInstitucional, validade);
-  await propagarComplementoLote(codigo, loteFornecedor, loteInstitucional, validade);
-  const item = findItemAnyCaixa(codigo);
-  return {codigo, loteFornecedor, loteInstitucional, validade, medicamento: item?item.medicamento:'(medicamento não encontrado no cadastro)'};
+  await learnLote(codigo,loteFornecedor,loteInstitucional,validade);
+  await propagarComplementoLote(codigo,loteFornecedor,loteInstitucional,validade);
+  const item=findItemAnyCaixa(codigo);
+  return {codigo,loteFornecedor,loteInstitucional,validade,medicamento:item?item.medicamento:'(medicamento não encontrado no cadastro)'};
 }
 
 function addScan(res){
