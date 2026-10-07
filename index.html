@@ -664,25 +664,19 @@ async function saveMapeamento(codigoLido, codigo){
 }
 
 function normalizarCamposLote(loteFornecedor, loteInstitucional){
+  // ATENÇÃO: versão anterior tentava "corrigir" qual campo é qual assumindo que lote
+  // institucional é SEMPRE exatamente 7 dígitos — isso apagava lotes institucionais
+  // legítimos que fugiam desse padrão (6 dígitos, 8 dígitos, etc.), classificando errado
+  // como fornecedor. Removido: confiamos na classificação já feita na leitura do código
+  // (parseCodigoInterno / parseGS1), que é quem realmente sabe de onde veio o valor.
+  // Só tratamos o caso claro de duplicidade (mesmo valor nos dois campos por engano).
   let f=String(loteFornecedor||'').trim();
   let i=String(loteInstitucional||'').trim();
-  const ehEinstein=v=>/^\d{7}$/.test(String(v||'').trim());
-  const ehFornecedor=v=>{ const x=String(v||'').trim(); return !!x && !ehEinstein(x); };
-  // Se o mesmo valor aparece nos dois campos, mantém apenas na classificação correta.
-  if(f && i && f===i){
-    if(ehEinstein(i)) f=''; else i='';
-  }
-  // Valor no campo Einstein fora do padrão institucional é tratado como fornecedor.
-  if(i && !ehEinstein(i)){
-    if(!f) f=i;
-    i='';
-  }
-  // Valor institucional digitado no campo fornecedor é movido para Einstein.
-  if(f && ehEinstein(f)){
-    if(!i) i=f;
+  if (f && i && f===i){
+    // mesmo valor nos dois campos — mantém só no institucional (convenção já usada no app)
     f='';
   }
-  return {loteFornecedor:f||null,loteInstitucional:i||null};
+  return {loteFornecedor:f||null, loteInstitucional:i||null};
 }
 
 function chaveMapaGlobal(loteFornecedor,loteInstitucional){
@@ -2171,13 +2165,17 @@ async function atualizarCadastroComBipagem(itensBipados){
         validade:lb.validade||(comp&&comp.validade)||null,
         qtd:Number(lb.qtd||0)
       };
-      let mesmo=consolidados.find(x=>
-        (atual.loteFornecedor&&x.loteFornecedor===atual.loteFornecedor) ||
-        (atual.loteInstitucional&&x.loteInstitucional===atual.loteInstitucional)
-      );
-      if(!mesmo && atual.validade){
-        mesmo=consolidados.find(x=>x.validade===atual.validade && (!x.loteFornecedor||!x.loteInstitucional||!atual.loteFornecedor||!atual.loteInstitucional));
-      }
+      // Consolida somente quando existe identificador de lote realmente igual.
+      // Validade igual nunca une lotes diferentes: 3 do lote X + 3 do lote Y
+      // permanecem dois lotes, embora o total do medicamento seja 6.
+      const fornecedorAtual=String(atual.loteFornecedor||'').trim().toUpperCase();
+      const institucionalAtual=String(atual.loteInstitucional||'').trim().toUpperCase();
+      let mesmo=consolidados.find(x=>{
+        const fornecedorExistente=String(x.loteFornecedor||'').trim().toUpperCase();
+        const institucionalExistente=String(x.loteInstitucional||'').trim().toUpperCase();
+        return (fornecedorAtual && fornecedorExistente===fornecedorAtual) ||
+          (institucionalAtual && institucionalExistente===institucionalAtual);
+      });
       if(mesmo){
         mesmo.loteFornecedor=mesmo.loteFornecedor||atual.loteFornecedor;
         mesmo.loteInstitucional=mesmo.loteInstitucional||atual.loteInstitucional;
