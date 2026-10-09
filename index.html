@@ -327,8 +327,15 @@ a{color:var(--primary);}
     <div class="card">
       <h2>Códigos mapeados</h2>
       <div class="scan-box"><input type="text" id="mapeamentoScanInput" placeholder="Bipe aqui pra mapear (ou remapear) um código, sem precisar esperar a reposição/conferência…" autocomplete="off"></div>
+      <div class="flex" style="margin-bottom:12px;"><input type="text" id="novoMapCodigo" placeholder="Código (GTIN ou 6 dígitos)" style="flex:1;min-width:160px;"><select id="novoMapMed" style="flex:2;min-width:200px;"></select><button class="btn" id="btnAddMap">Adicionar</button></div>
       <div class="table-wrap">
-        <table id="mapaTable"><thead><tr><th>Código lido</th><th>Medicamento vinculado</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="mapaTable"><thead><tr><th>Código lido</th><th>Medicamento vinculado</th><th>Ações</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Vínculos de lote (fornecedor ↔ Einstein)</h2>
+      <div class="table-wrap">
+        <table id="vinculosTable"><thead><tr><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Ações</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
     <div class="card">
@@ -1489,6 +1496,47 @@ function coletarFormularioCadastro(){
   });
   return itens;
 }
+// ---- Limite por medicamento: a soma dos lotes nunca passa da quantidade esperada total ----
+function qtdeEfetivaLote(l){
+  const q=Number(l&&l.qtdeMax);
+  if(q>0) return q;
+  return (l&&(l.loteFornecedor||l.loteInstitucional||l.validade)) ? 1 : 0;   // lote preenchido sem quantidade conta 1
+}
+function resumoLimiteItem(item){
+  const prev=Number(item.qtde)||0;
+  const soma=(item.lotes||[]).reduce((t,l)=>t+qtdeEfetivaLote(l),0);
+  return {prev,soma,disp:prev-soma,exc:soma-prev};
+}
+function avisarLimiteMedicamento(item, adicionada){
+  const r=resumoLimiteItem(item); const add=Number(adicionada)||0; const total=r.soma+add;
+  return confirmarEstilizado('Limite do medicamento atingido',
+    '<div class="muted"><b>'+esc(item.medicamento)+'</b><br>Quantidade prevista: <b>'+r.prev+'</b><br>Já cadastrada nos outros lotes: <b>'+r.soma+'</b><br>Quantidade que está sendo adicionada: <b>'+add+'</b><br>Total resultante: <b>'+total+'</b><br>Excedente: <b>'+Math.max(total-r.prev,0)+'</b></div><div class="muted" style="margin-top:8px;">Reduza a quantidade de outro lote (ou aumente a quantidade total do medicamento) antes de adicionar.</div>',
+    'Entendi','Fechar');
+}
+function lerResumoCard(card){
+  const Q=Number((card.querySelector('.it-qtde')||{}).value)||0;
+  const rows=[...card.querySelectorAll('tbody tr')].map(tr=>{
+    const F=tr.querySelector('.li-fornecedor').value.trim(), I=tr.querySelector('.li-institucional').value.trim(), V=tr.querySelector('.li-validade').value;
+    const q=Number(tr.querySelector('.li-qtdmax').value)||0;
+    const naoVazia=!!(F||I||V);
+    return {tr,ef:q>0?q:(naoVazia?1:0),vazia:!(naoVazia||q>0)};
+  });
+  const soma=rows.reduce((t,r)=>t+r.ef,0);
+  return {Q,rows,soma,disp:Q-soma,exc:soma-Q,vazias:rows.filter(r=>r.vazia).length};
+}
+function atualizarLimiteCard(card){
+  if(!card||!card.querySelector) return;
+  const r=lerResumoCard(card);
+  r.rows.forEach(x=>{ const inp=x.tr.querySelector('.li-qtdmax'); inp.max=Math.max(r.Q-(r.soma-x.ef),0); });
+  const res=card.querySelector('.li-resumo');
+  if(res){ res.textContent='Lotes: '+r.soma+' de '+r.Q+(r.exc>0?' — excede em '+r.exc:' · disponível '+Math.max(r.disp,0)); res.style.color=r.exc>0?'var(--danger)':''; }
+  const btn=card.querySelector('.btnAddLote');
+  if(btn){
+    const cheio=r.disp<=0, semEspaco=!cheio && r.vazias>=r.disp;
+    btn.disabled=cheio||semEspaco;
+    btn.textContent=cheio?'Limite atingido ('+Math.min(r.soma,r.Q)+'/'+r.Q+')':(semEspaco?'Preencha o lote vazio':'+ adicionar lote');
+  }
+}
 function novoItemVazio(){
   return {codigo:null, medicamento:'NOVO MEDICAMENTO', qtde:1, lotes:[
     {loteFornecedor:'',loteInstitucional:'',validade:'',qtdeMax:null},
@@ -1505,8 +1553,7 @@ function renderCadastroList(){
   // (fornecedor em uma e institucional em outra) são consolidadas antes de renderizar.
   const itens = (currentCaixa().itens || []).map(item=>({...item,lotes:consolidarLotesDoItem(item.lotes)}));
   wrap.innerHTML = itens.map((item,idx)=>{
-    const somaLotes = (item.lotes||[]).reduce((s,l)=> s + (l.qtdeMax!=null && l.qtdeMax!=='' ? Number(l.qtdeMax) : 0), 0);
-    const avisoSoma = somaLotes>0 && somaLotes!==item.qtde ? '<div class="muted" style="color:var(--warn);">⚠️ soma dos máximos por lote ('+somaLotes+') difere da quantidade esperada total ('+item.qtde+')</div>' : '';
+    const avisoSoma = '<div class="muted li-resumo" style="margin-top:6px;font-weight:700;"></div>';
     const lotesHtml = (item.lotes||[]).map((l,li)=>
       '<tr>' +
         '<td><input class="li-fornecedor" type="text" value="'+esc(l.loteFornecedor)+'" placeholder="Lote fornecedor"></td>' +
@@ -1527,6 +1574,7 @@ function renderCadastroList(){
         '<button class="btn danger btnDelItem" data-idx="'+idx+'" style="margin-left:auto;">Excluir medicamento</button></div>' +
     '</div>';
   }).join('') || '<div class="muted">Nenhum medicamento cadastrado nesta caixa.</div>';
+  wrap.querySelectorAll('.itemcard').forEach(atualizarLimiteCard);
 }
 function highlightCadastroItem(idx){
   const el = document.getElementById('itemcard-'+idx);
@@ -1584,6 +1632,8 @@ function biparCadastro(raw){
         loteExistente.loteInstitucional = loteExistente.loteInstitucional || lido.loteInstitucional;
         loteExistente.validade = validade || loteExistente.validade || null;
         mostrarToast('✅ Lote institucional localizado e atualizado no cadastro.');
+      } else if (resumoLimiteItem(item).disp<=0){
+        avisarLimiteMedicamento(item,1);   // limite do medicamento: não adiciona o 3º lote se o total é 2
       } else {
         item.lotes = item.lotes || [];
         item.lotes.push({
@@ -1621,11 +1671,34 @@ document.getElementById('nomeCaixaInput').addEventListener('change', (e)=>{
   state.referencia[state.caixaId] = {nome: e.target.value.trim() || caixa.nome, itens: caixa.itens};
   fillCaixaSelects();
 });
+document.getElementById('cadastroList').addEventListener('input', (e)=>{
+  const card=e.target.closest&&e.target.closest('.itemcard'); if(!card) return;
+  if(e.target.classList.contains('li-qtdmax')){
+    const r=lerResumoCard(card);
+    const mine=r.rows.find(x=>x.tr===e.target.closest('tr'));
+    const outros=r.soma-(mine?mine.ef:0);
+    const maxPerm=Math.max(r.Q-outros,0);
+    if(Number(e.target.value)>maxPerm){
+      e.target.value=maxPerm>0?maxPerm:'';
+      mostrarToast('Limite: previsto '+r.Q+', outros lotes '+outros+' → máximo '+maxPerm+' neste lote.','erro');
+    }
+  }
+  atualizarLimiteCard(card);
+});
+document.getElementById('cadastroList').addEventListener('change', (e)=>{
+  const card=e.target.closest&&e.target.closest('.itemcard'); if(!card) return;
+  if(e.target.classList.contains('it-qtde')){
+    const r=lerResumoCard(card);
+    if(r.exc>0){ e.target.value=r.soma; mostrarToast('A quantidade total não pode ficar abaixo dos lotes cadastrados ('+r.soma+'). Reduza antes a quantidade de um lote.','erro'); }
+  }
+  atualizarLimiteCard(card);
+});
 document.getElementById('cadastroList').addEventListener('click', async (e)=>{
   const itens = coletarFormularioCadastro();
 
   if (e.target.classList.contains('btnAddLote')){
     const idx = +e.target.dataset.idx;
+    if (resumoLimiteItem(itens[idx]).disp<=0){ currentCaixa().itens = itens; renderCadastroList(); await avisarLimiteMedicamento(itens[idx],1); return; }
     itens[idx].lotes.push({loteFornecedor:'',loteInstitucional:'',validade:''});
     currentCaixa().itens = itens; renderCadastroList();
   } else if (e.target.classList.contains('btnDelLote')){
@@ -1666,12 +1739,12 @@ document.getElementById('btnSalvarCadastro').addEventListener('click', async ()=
   const nome = document.getElementById('nomeCaixaInput').value.trim() || caixa.nome;
   // O limite pertence ao medicamento (não a cada lote): a soma dos lotes não pode passar do previsto.
   const excedentes = itens.map(it=>{
-    const lotesQ=(it.lotes||[]).filter(l=>l.qtdeMax!=null && l.qtdeMax!=='' && Number(l.qtdeMax)>0);
-    const soma=lotesQ.reduce((s,l)=>s+Number(l.qtdeMax),0);
+    const lotesQ=(it.lotes||[]).filter(l=>qtdeEfetivaLote(l)>0);
+    const soma=lotesQ.reduce((s,l)=>s+qtdeEfetivaLote(l),0);
     return {it,lotesQ,soma};
   }).filter(x=>x.soma>Number(x.it.qtde||0));
   if (excedentes.length){
-    const linhas=excedentes.map(({it,lotesQ,soma})=>'<li><b>'+esc(it.medicamento)+'</b><br>Quantidade prevista: '+it.qtde+' · já distribuída nos lotes: '+lotesQ.map(l=>esc(l.loteInstitucional||l.loteFornecedor||'sem lote')+' = '+l.qtdeMax).join(' + ')+'<br>Total resultante: '+soma+' · <b>excedente: '+(soma-Number(it.qtde||0))+'</b></li>').join('');
+    const linhas=excedentes.map(({it,lotesQ,soma})=>'<li><b>'+esc(it.medicamento)+'</b><br>Quantidade prevista: '+it.qtde+' · já distribuída nos lotes: '+lotesQ.map(l=>esc(l.loteInstitucional||l.loteFornecedor||'sem lote')+' = '+qtdeEfetivaLote(l)).join(' + ')+'<br>Total resultante: '+soma+' · <b>excedente: '+(soma-Number(it.qtde||0))+'</b></li>').join('');
     await confirmarEstilizado('Cadastro NÃO salvo: lotes somam mais que o previsto','<div class="muted">Ajuste as quantidades por lote (ou a quantidade total do medicamento) e salve novamente. Pode haver 2, 3 ou mais lotes, desde que a soma não passe do previsto:</div><ul style="margin:8px 0 0 18px;padding:0;">'+linhas+'</ul>','Voltar e corrigir','Fechar');
     return;
   }
@@ -1983,26 +2056,129 @@ document.getElementById('mapeamentoScanInput').addEventListener('keydown', (e)=>
   if (e.key==='Enter'){ e.preventDefault(); const val = e.target.value; e.target.value=''; biparMapeamento(val); }
 });
 
+function opcoesMedicamentosHtml(selecionado){
+  const vistos=new Set(); const opts=[];
+  Object.values(state.referencia).forEach(c=>(c.itens||[]).forEach(it=>{ const k=String(it.codigo); if(!vistos.has(k)){vistos.add(k);opts.push(it);} }));
+  opts.sort((a,b)=>(a.medicamento||'').localeCompare(b.medicamento||''));
+  const sel=String(selecionado==null?'':selecionado);
+  let html=opts.map(it=>'<option value="'+esc(String(it.codigo))+'"'+(String(it.codigo)===sel?' selected':'')+'>'+esc(it.medicamento)+' ('+esc(String(it.codigo))+')</option>').join('');
+  if(sel && !vistos.has(sel)) html='<option value="'+esc(sel)+'" selected>(código '+esc(sel)+' — não encontrado)</option>'+html;
+  return html;
+}
+function editandoNaTabela(tbody){
+  const a=document.activeElement;
+  return !!(a && a.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && tbody.contains(a));
+}
 function renderMapeamentoTable(){
   const tbody = document.querySelector('#mapaTable tbody');
+  const novoSel = document.getElementById('novoMapMed');
+  if (novoSel && !(document.activeElement===novoSel)) { const v=novoSel.value; novoSel.innerHTML=opcoesMedicamentosHtml(v); if(v) novoSel.value=v; }
+  if (editandoNaTabela(tbody)) { renderVinculosTable(); renderLotesConhecidosTable(); return; }   // não apaga o que a pessoa está digitando
   const rows = Object.entries(state.mapeamentos);
   tbody.innerHTML = rows.map(([codigoLido, m])=>{
-    const it = findItemAnyCaixa(m.codigo);
-    return '<tr><td>'+esc(codigoLido)+'</td><td>'+esc(it?it.medicamento:'(medicamento não encontrado)')+'</td>' +
-      '<td class="flex"><button class="btn secondary btnEditarMap" data-codigo="'+esc(codigoLido)+'" style="padding:4px 8px;">✏️</button>' +
-      '<button class="btn danger btnDelMap" data-codigo="'+esc(codigoLido)+'" style="padding:4px 8px;">✕</button></td></tr>';
+    return '<tr data-codigo="'+esc(codigoLido)+'">' +
+      '<td><input class="edit-map-lido" type="text" value="'+esc(codigoLido)+'" style="width:100%;"></td>' +
+      '<td><select class="edit-map-med" style="width:100%;">'+opcoesMedicamentosHtml(m.codigo)+'</select></td>' +
+      '<td><div class="flex"><button class="btn btnSalvarMap" data-codigo="'+esc(codigoLido)+'" style="padding:6px 10px;">Salvar</button>' +
+      '<button class="btn danger btnDelMap" data-codigo="'+esc(codigoLido)+'" style="padding:6px 10px;">✕</button></div></td></tr>';
   }).join('') || '<tr><td colspan="3" class="muted">Nenhum código mapeado ainda.</td></tr>';
+  renderVinculosTable();
   renderLotesConhecidosTable();
+}
+async function salvarMapeamentoEditado(antigo, novoLido, codigoMed){
+  novoLido = limparEntradaLeitor(novoLido||'');
+  if (!novoLido){ mostrarToast('Informe o código.', 'erro'); return false; }
+  if (!codigoMed){ mostrarToast('Escolha o medicamento.', 'erro'); return false; }
+  const existente = state.mapeamentos[novoLido];
+  if (novoLido!==antigo && existente && String(existente.codigo)!==String(codigoMed)){
+    const itE = findItemAnyCaixa(existente.codigo);
+    const ok = await confirmarEstilizado('Código já mapeado','<div class="muted">O código <b>'+esc(novoLido)+'</b> já está vinculado a <b>'+esc(itE?itE.medicamento:existente.codigo)+'</b>. Substituir pelo novo vínculo?</div>','Substituir','Cancelar');
+    if (!ok) return false;
+  }
+  await saveMapeamento(novoLido, codigoMed);
+  if (antigo && novoLido!==antigo){
+    delete state.mapeamentos[antigo];
+    if (dbApi){ try{ await dbApi.doc('mapeamentos/'+encodeURIComponent(antigo)).delete(); } catch(e){ console.error(e); } }
+  }
+  renderMapeamentoTable();
+  mostrarToast('✅ Código salvo.');
+  return true;
+}
+function renderVinculosTable(){
+  const tbody = document.querySelector('#vinculosTable tbody');
+  if (!tbody) return;
+  if (editandoNaTabela(tbody)) return;   // não apaga o que a pessoa está digitando
+  const rows = Object.entries(state.mapaLotesGlobais).sort((a,b)=>String(a[1].loteFornecedor||'').localeCompare(String(b[1].loteFornecedor||'')));
+  tbody.innerHTML = rows.map(([key,m])=>
+    '<tr data-key="'+esc(key)+'">'+
+    '<td><input class="edit-vinc-f" type="text" value="'+esc(m.loteFornecedor||'')+'" style="width:100%;"></td>'+
+    '<td><input class="edit-vinc-i" type="text" value="'+esc(m.loteInstitucional||'')+'" style="width:100%;"></td>'+
+    '<td><input class="edit-vinc-val" type="date" value="'+norm(m.validade)+'"></td>'+
+    '<td><div class="flex"><button class="btn btnSalvarVinculo" data-key="'+esc(key)+'" style="padding:6px 10px;">Salvar</button><button class="btn danger btnDelVinculo" data-key="'+esc(key)+'" style="padding:6px 10px;">✕</button></div></td></tr>'
+  ).join('') || '<tr><td colspan="4" class="muted">Nenhum vínculo salvo ainda.</td></tr>';
+}
+async function salvarVinculoEditado(keyAntigo, fDig, iDig, validade){
+  const old = state.mapaLotesGlobais[keyAntigo];
+  if (!old) return false;
+  const F = String(fDig||'').trim(), I = String(iDig||'').trim();
+  if (!F || !I){ mostrarToast('Informe os dois lotes.', 'erro'); return false; }
+  if (canonLoteComparacao(F)===canonLoteComparacao(I)){ mostrarToast('Os dois lotes não podem ser iguais.', 'erro'); return false; }
+  validade = validade || null;
+  const cfO=canonLoteComparacao(old.loteFornecedor), ciO=canonLoteComparacao(old.loteInstitucional);
+  const cf=canonLoteComparacao(F), ci=canonLoteComparacao(I);
+  if (cf===cfO && ci===ciO && F===old.loteFornecedor && I===old.loteInstitucional && (validade||null)===(old.validade||null)){ mostrarToast('Nada foi alterado.'); return false; }
+  const novoKey = chaveMapaGlobal(F,I);
+  const outros = Object.entries(state.mapaLotesGlobais).filter(([k])=>k!==keyAntigo).map(([,m])=>m);
+  const colisao = novoKey!==keyAntigo && state.mapaLotesGlobais[novoKey];
+  const conflitos = outros.filter(m=>{ const mf=canonLoteComparacao(m.loteFornecedor), mi=canonLoteComparacao(m.loteInstitucional); return (mf===cf&&mi!==ci)||(mi===ci&&mf!==cf); });
+  // linhas das caixas / lotes aprendidos que têm EXATAMENTE o par antigo
+  const casaPar=(lf,li)=>canonLoteComparacao(lf)===cfO && canonLoteComparacao(li)===ciO;
+  let nLinhas=0; Object.values(state.referencia).forEach(c=>(c.itens||[]).forEach(it=>(it.lotes||[]).forEach(l=>{ if(casaPar(l.loteFornecedor,l.loteInstitucional)) nLinhas++; })));
+  const aviso =
+    (colisao?'<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:8px 10px;margin:8px 0;">Já existe um vínculo salvo com estes dois lotes; ele será substituído por este.</div>':'')+
+    (conflitos.length?'<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:8px 10px;margin:8px 0;"><b>Atenção:</b> um destes lotes já está vinculado a outro lote ('+conflitos.map(c=>esc((c.loteFornecedor||'—')+' ↔ '+(c.loteInstitucional||'—'))).join('; ')+').</div>':'');
+  const corpo='<div class="muted">Antes: <b>'+esc(old.loteFornecedor)+'</b> ↔ <b>'+esc(old.loteInstitucional)+'</b>'+(old.validade?' · '+esc(fmtDateBR(old.validade)):'')+'<br>Depois: <b>'+esc(F)+'</b> ↔ <b>'+esc(I)+'</b>'+(validade?' · '+esc(fmtDateBR(validade)):'')+'</div>'+aviso+
+    '<div class="muted" style="margin-top:8px;">⚠️ A alteração vale <b>globalmente</b>'+(nLinhas?' e corrige também as <b>'+nLinhas+'</b> linha(s) de caixa que têm exatamente o par antigo':'')+'. Confirme só se os dois códigos são o mesmo lote físico.</div>';
+  const ok = await confirmarEstilizado('Alterar vínculo de lote?', corpo, 'Confirmar alteração', 'Cancelar');
+  if (!ok) return false;
+  const rec = {loteFornecedor:F, loteInstitucional:I, validade, atualizadoEm:new Date().toISOString()};
+  state.mapaLotesGlobais[novoKey]=rec;
+  if (novoKey!==keyAntigo) delete state.mapaLotesGlobais[keyAntigo];
+  const caixasAlt=new Set();
+  Object.entries(state.referencia).forEach(([cid,c])=>(c.itens||[]).forEach(it=>(it.lotes||[]).forEach(l=>{
+    if(casaPar(l.loteFornecedor,l.loteInstitucional)){ l.loteFornecedor=F; l.loteInstitucional=I; if(validade) l.validade=validade; caixasAlt.add(cid); }
+  })));
+  const conhAlt=[];
+  Object.entries(state.lotesConhecidos).forEach(([k,l])=>{
+    if(casaPar(l.loteFornecedor,l.loteInstitucional)){ conhAlt.push([k,l]); }
+  });
+  conhAlt.forEach(([k,l])=>{
+    const nk=l.codigo+'_'+F+'_'+I; delete state.lotesConhecidos[k];
+    state.lotesConhecidos[nk]={...l,loteFornecedor:F,loteInstitucional:I,validade:validade||l.validade||null,atualizadoEm:rec.atualizadoEm};
+    l.__nk=nk;
+  });
+  try{
+    if(dbApi){
+      await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(novoKey)).set(rec);
+      if(novoKey!==keyAntigo) await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(keyAntigo)).delete();
+      for(const cid of caixasAlt){ const c=state.referencia[cid]; await dbApi.doc('referencia/'+cid).set({nome:c.nome,itens:c.itens}); }
+      for(const [k,l] of conhAlt){ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(l.__nk)).set(state.lotesConhecidos[l.__nk]); await dbApi.doc('lotesConhecidos/'+encodeURIComponent(k)).delete(); }
+    }
+    mostrarToast('✅ Vínculo atualizado.');
+  }catch(err){ console.error(err); mostrarToast('⚠️ Não foi possível sincronizar a alteração.', 'erro'); }
+  renderAll(); renderVinculosTable();
+  return true;
 }
 function renderLotesConhecidosTable(){
   const tbody = document.querySelector('#lotesTable tbody');
   if (!tbody) return;
+  if (editandoNaTabela(tbody)) return;   // não apaga o que a pessoa está digitando
   const rows = Object.entries(state.lotesConhecidos);
   tbody.innerHTML = rows.map(([key, l])=>{
     const it = findItemAnyCaixa(l.codigo);
     const nl=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
     return '<tr data-lotekey="'+esc(key)+'">'+
-      '<td><b>'+esc(it?it.medicamento:l.codigo)+'</b><div class="muted">Código '+esc(l.codigo)+'</div></td>'+
+      '<td><select class="edit-codigo" style="width:100%;">'+opcoesMedicamentosHtml(l.codigo)+'</select></td>'+
       '<td><input class="edit-loteF" type="text" value="'+esc(nl.loteFornecedor||'')+'" placeholder="Fornecedor"></td>'+
       '<td><input class="edit-loteI" type="text" value="'+esc(nl.loteInstitucional||'')+'" placeholder="Einstein"></td>'+
       '<td><input class="edit-validade" type="date" value="'+norm(l.validade)+'"></td>'+
@@ -2246,7 +2422,7 @@ function subscribeReferencia(){ dbApi.collection('referencia').onSnapshot(snap=>
 function subscribeHistorico(){ dbApi.collection('historico').orderBy('criadoEm','desc').limit(400).onSnapshot(snap=>{ state.historico = snap.docs.map(d=>d.data()); renderHistorico(); renderRepInfoPanel(); }, err=>console.error(err)); }
 function subscribeMapeamentos(){ dbApi.collection('mapeamentos').onSnapshot(snap=>{ state.mapeamentos = {}; snap.docs.forEach(d=>{ state.mapeamentos[decodeURIComponent(d.id)] = d.data(); }); renderMapeamentoTable(); }, err=>console.error(err)); }
 function subscribeLotesConhecidos(){ dbApi.collection('lotesConhecidos').onSnapshot(snap=>{ state.lotesConhecidos = {}; snap.docs.forEach(d=>{ state.lotesConhecidos[decodeURIComponent(d.id)] = d.data(); }); renderLotesConhecidosTable(); }, err=>console.error(err)); }
-function subscribeMapaLotesGlobais(){ dbApi.collection('mapaLotesGlobais').onSnapshot(snap=>{ state.mapaLotesGlobais={}; snap.docs.forEach(d=>{ state.mapaLotesGlobais[decodeURIComponent(d.id)]=d.data(); }); },err=>console.error(err)); }
+function subscribeMapaLotesGlobais(){ dbApi.collection('mapaLotesGlobais').onSnapshot(snap=>{ state.mapaLotesGlobais={}; snap.docs.forEach(d=>{ state.mapaLotesGlobais[decodeURIComponent(d.id)]=d.data(); }); renderVinculosTable(); },err=>console.error(err)); }
 function subscribeUsuarios(){
   return new Promise((resolve)=>{
     let primeira = true;
@@ -2615,6 +2791,12 @@ document.querySelector('#usuariosTable tbody').addEventListener('click', async (
 document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>{
   const btnDel = e.target.closest('.btnDelMap');
   const btnEdit = e.target.closest('.btnEditarMap');
+  const btnSaveMap = e.target.closest('.btnSalvarMap');
+  if (btnSaveMap){
+    const tr = btnSaveMap.closest('tr');
+    await salvarMapeamentoEditado(btnSaveMap.dataset.codigo, tr.querySelector('.edit-map-lido').value, tr.querySelector('.edit-map-med').value);
+    return;
+  }
   if (btnDel){
     const codigo = btnDel.dataset.codigo;
     delete state.mapeamentos[codigo];
@@ -2625,6 +2807,26 @@ document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>
     await editarMapeamento(codigo);
   }
 });
+document.querySelector('#vinculosTable tbody').addEventListener('click', async (e)=>{
+  const btnSave = e.target.closest('.btnSalvarVinculo');
+  const btnDel = e.target.closest('.btnDelVinculo');
+  if (btnSave){
+    const tr = btnSave.closest('tr');
+    await salvarVinculoEditado(btnSave.dataset.key, tr.querySelector('.edit-vinc-f').value, tr.querySelector('.edit-vinc-i').value, tr.querySelector('.edit-vinc-val').value);
+  } else if (btnDel){
+    const key = btnDel.dataset.key; const m = state.mapaLotesGlobais[key]; if(!m) return;
+    const ok = await confirmarEstilizado('Remover vínculo?','<div class="muted">Remover o vínculo <b>'+esc(m.loteFornecedor)+'</b> ↔ <b>'+esc(m.loteInstitucional)+'</b>? Os lotes já cadastrados nas caixas não são alterados; só deixa de completar um lote pelo outro.</div>','Remover','Cancelar');
+    if (!ok) return;
+    delete state.mapaLotesGlobais[key];
+    renderVinculosTable();
+    if (dbApi){ try{ await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(key)).delete(); mostrarToast('Vínculo removido.'); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
+  }
+});
+document.getElementById('btnAddMap').addEventListener('click', async ()=>{
+  const inp = document.getElementById('novoMapCodigo');
+  const ok = await salvarMapeamentoEditado(null, inp.value, document.getElementById('novoMapMed').value);
+  if (ok) inp.value='';
+});
 document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=>{
   const btnSave = e.target.closest('.btnSalvarLoteConhecido');
   const btnDel = e.target.closest('.btnDelLoteConhecido');
@@ -2633,6 +2835,7 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
     const old=state.lotesConhecidos[oldKey];
     if(!old) return;
     const tr=btnSave.closest('tr');
+    const codigoNovo=tr.querySelector('.edit-codigo').value||old.codigo;
     const digitadoF=tr.querySelector('.edit-loteF').value.trim()||null;
     const digitadoI=tr.querySelector('.edit-loteI').value.trim()||null;
     const normalizado=normalizarCamposLote(digitadoF,digitadoI);
@@ -2641,8 +2844,8 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
     const validade=tr.querySelector('.edit-validade').value||null;
     if(!loteFornecedor && !loteInstitucional){ mostrarToast('Informe ao menos um dos lotes.', 'erro'); return; }
     if(!validade){ mostrarToast('Informe a validade.', 'erro'); return; }
-    const novoKey=old.codigo+'_'+(loteFornecedor||'')+'_'+(loteInstitucional||'');
-    const rec={codigo:old.codigo,loteFornecedor,loteInstitucional,validade,atualizadoEm:new Date().toISOString()};
+    const novoKey=codigoNovo+'_'+(loteFornecedor||'')+'_'+(loteInstitucional||'');
+    const rec={codigo:codigoNovo,loteFornecedor,loteInstitucional,validade,atualizadoEm:new Date().toISOString()};
     if(novoKey!==oldKey) delete state.lotesConhecidos[oldKey];
     state.lotesConhecidos[novoKey]=rec;
     try{
@@ -2651,8 +2854,8 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
         if(novoKey!==oldKey) await dbApi.doc('lotesConhecidos/'+encodeURIComponent(oldKey)).delete();
       }
       renderLotesConhecidosTable();
-      if(loteFornecedor&&loteInstitucional) await garantirVinculoGlobalConfirmado(old.codigo,loteFornecedor,loteInstitucional,validade,'Você informou os dois lotes juntos nesta linha.');
-      await propagarComplementoLote(old.codigo,loteFornecedor,loteInstitucional,validade);
+      if(loteFornecedor&&loteInstitucional) await garantirVinculoGlobalConfirmado(codigoNovo,loteFornecedor,loteInstitucional,validade,'Você informou os dois lotes juntos nesta linha.');
+      await propagarComplementoLote(codigoNovo,loteFornecedor,loteInstitucional,validade);
       mostrarToast('✅ Lote e validade atualizados.');
     }catch(err){ console.error(err); mostrarToast('⚠️ Não foi possível sincronizar a alteração.', 'erro'); }
     return;
