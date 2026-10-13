@@ -47,7 +47,7 @@ header h1 span{display:block; font-size:13.2px; font-weight:400; opacity:.85;}
 .hdr-controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
 .hdr-controls label{font-size:13.2px; opacity:.85; display:block; margin-bottom:2px;}
 .hdr-field{display:flex; flex-direction:column;}
-select, input[type=text], input[type=date], input[type=number]{font-size:15.6px; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--panel); color:var(--text); min-width:0;}
+select, input[type=text], input[type=date], input[type=time], input[type=number], textarea{font-size:15.6px; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--panel); color:var(--text); min-width:0;}
 .hdr-controls select{min-width:170px;}
 .clock{font-size:14.4px; opacity:.9; text-align:right;}
 nav.tabs{display:flex; overflow-x:auto; background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5;}
@@ -130,6 +130,7 @@ tr.row-pendente td{color:var(--muted);}
 @media (max-width:640px){.grid2{grid-template-columns:1fr;}}
 .small-input{width:100%;}
 .flex{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.lac-lbl{display:block; margin-bottom:3px;}
 footer{padding:20px; text-align:center; font-size:13.2px; color:var(--muted);}
 a{color:var(--primary);}
 .itemcard{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; transition:background .3s, border-color .3s;}
@@ -161,6 +162,7 @@ a{color:var(--primary);}
   <button data-tab="cadastro">Cadastro da Caixa</button>
   <button data-tab="contagem">Contagem Geral</button>
   <button data-tab="historico">Histórico</button>
+  <button data-tab="lacres">Controle de Lacres</button>
   <button data-tab="consultar">Consultar</button>
   <button data-tab="usuarios">Usuários</button>
   <button data-tab="mapeamento">Códigos Mapeados</button>
@@ -301,6 +303,36 @@ a{color:var(--primary);}
     <div class="card" id="histDetalheCard" style="display:none;"></div>
   </section>
 
+  <section class="view" id="view-lacres">
+    <div class="card">
+      <h2>Controle de Lacres - Caixa de Anestesia - Radioterapia</h2>
+      <div class="grid2" style="margin-bottom:10px;">
+        <div><label class="muted lac-lbl">Data</label><input type="date" id="lacData" class="small-input"></div>
+        <div><label class="muted lac-lbl">Horário</label><input type="time" id="lacHora" class="small-input"></div>
+        <div><label class="muted lac-lbl">Nº do Lacre 1</label><input type="text" id="lacNum1" class="small-input" autocomplete="off"></div>
+        <div><label class="muted lac-lbl">Nº do Lacre 2</label><input type="text" id="lacNum2" class="small-input" autocomplete="off"></div>
+        <div><label class="muted lac-lbl">Caixa</label><select id="lacCaixa" class="small-input"></select></div>
+        <div><label class="muted lac-lbl">Nome</label><input type="text" id="lacNome" class="small-input" autocomplete="off"></div>
+        <div><label class="muted lac-lbl">DRT</label><input type="text" id="lacDrt" class="small-input" autocomplete="off"></div>
+      </div>
+      <div class="grid2" style="margin-bottom:10px;">
+        <div><label class="muted lac-lbl">1º Cheque</label><input type="text" id="lacCheque1" class="small-input" placeholder="Nome / DRT de quem fez o 1º cheque" autocomplete="off"></div>
+        <div><label class="muted lac-lbl">2º Cheque</label><input type="text" id="lacCheque2" class="small-input" placeholder="Nome / DRT de quem fez o 2º cheque" autocomplete="off"></div>
+      </div>
+      <div style="margin-bottom:12px;"><label class="muted lac-lbl">Observações</label><textarea id="lacObs" class="small-input" rows="3"></textarea></div>
+      <button class="btn" id="btnRegistrarLacre">Registrar lacre</button>
+    </div>
+    <div class="card">
+      <div class="flex" style="justify-content:space-between;margin-bottom:10px;">
+        <h2 style="margin:0;">Registros (para controle)</h2>
+        <select id="lacFiltroCaixa"></select>
+      </div>
+      <div class="table-wrap">
+        <table id="lacresTable"><thead><tr><th>Data</th><th>Horário</th><th>Lacre 1</th><th>Lacre 2</th><th>Caixa</th><th>Nome</th><th>DRT</th><th>1º Cheque</th><th>2º Cheque</th><th>Observações</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="view-consultar">
     <div class="card">
       <h2>Bipar para consultar</h2>
@@ -416,6 +448,7 @@ const state = {
   emUso: {},
   pulados: new Set(),
   historico: [],
+  lacres: [],
   session: {},
   lastScan: null,
   consultaAtual: null,
@@ -1416,6 +1449,52 @@ function renderRepInfoPanel(){
     '</div>';
 }
 
+// Reposição: completa, na própria bipagem, o lote que faltou (só tem fornecedor OU só tem Einstein).
+function lotesIncompletosDaSessao(codigo){
+  const sc=state.session[String(codigo)];
+  if(!sc) return [];
+  return Object.entries(sc.lotes).filter(([k,l])=>!!l.loteFornecedor!==!!l.loteInstitucional).map(([k,l])=>({k,l}));
+}
+async function completarLoteFaltante(codigo){
+  if(state.modo!=='REPOSICAO') return;
+  const lista=lotesIncompletosDaSessao(codigo);
+  if(!lista.length){ mostrarToast('Nenhum lote faltando neste item.'); return; }
+  const item=findItemAnyCaixa(codigo);
+  const campos=lista.map((x,i)=>{
+    const temF=!!x.l.loteFornecedor;
+    return '<div class="row"><label class="muted">'+(temF?'Fornecedor <b>'+esc(x.l.loteFornecedor)+'</b> — informe o lote Einstein':'Einstein <b>'+esc(x.l.loteInstitucional)+'</b> — informe o lote fornecedor')+' ('+x.l.qtd+' un.)</label><input type="text" class="cl-input" data-i="'+i+'" placeholder="'+(temF?'Lote Einstein':'Lote fornecedor')+'" autocomplete="off"></div>';
+  }).join('');
+  const html='<h3>Completar lote faltante</h3><div class="muted" style="margin-bottom:10px;">'+esc(item?item.medicamento:codigo)+'</div>'+campos+
+    '<div class="actions"><button class="btn secondary" id="mCompletarCancel">Cancelar</button><button class="btn" id="mCompletarOk">Salvar</button></div>';
+  const valores=await showModal(html);
+  if(!valores) return;
+  const sc=state.session[String(codigo)];
+  let n=0;
+  for(let i=0;i<lista.length;i++){
+    const digitado=String(valores[i]||'').trim();
+    if(!digitado) continue;
+    const {k,l}=lista[i];
+    const novoF=l.loteFornecedor||digitado, novoI=l.loteInstitucional||digitado;
+    if(canonLoteComparacao(novoF)===canonLoteComparacao(novoI)){ mostrarToast('Fornecedor e Einstein não podem ser iguais.', 'erro'); continue; }
+    // mesma unidade: a quantidade é movida, nunca duplicada
+    delete sc.lotes[k];
+    const nk=loteKey(novoF,novoI);
+    if(sc.lotes[nk]){ sc.lotes[nk].qtd+=l.qtd; sc.lotes[nk].validade=sc.lotes[nk].validade||l.validade; }
+    else sc.lotes[nk]={...l,loteFornecedor:novoF,loteInstitucional:novoI};
+    const validade=sc.lotes[nk].validade||null;
+    await garantirVinculoGlobalConfirmado(codigo,novoF,novoI,validade,'Você informou o lote faltante nesta reposição.');
+    if(validade) await learnLote(codigo,novoF,novoI,validade);
+    n++;
+  }
+  renderLastScan(); renderBipagemTable();
+  if(n) mostrarToast('✅ Lote faltante completado.');
+}
+document.addEventListener('click',(e)=>{
+  if(e.target.id==='mCompletarOk'){
+    const vals=[]; document.querySelectorAll('.cl-input').forEach(inp=>{ vals[Number(inp.dataset.i)]=inp.value; });
+    closeModal(vals);
+  } else if(e.target.id==='mCompletarCancel'){ closeModal(null); }
+});
 function renderBipagemTable(){
   document.getElementById('bipagemCaixaTitulo').textContent = 'Itens da caixa — ' + currentCaixa().nome;
   document.getElementById('scanTitulo').textContent = state.modo==='REPOSICAO' ? 'Bipar item da reposição' : 'Bipar item da conferência';
@@ -1434,6 +1513,9 @@ function renderBipagemTable(){
     const lI = scan ? Object.values(scan.lotes).map(l=>esc(l.loteInstitucional||'—')+' ('+l.qtd+')').join('<br>') : '—';
     const val = scan ? Object.values(scan.lotes).map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
     const temAlgoParaApagar = !!scan || state.pulados.has(String(item.codigo));
+    const btnCompletar = (state.modo==='REPOSICAO' && lotesIncompletosDaSessao(item.codigo).length)
+      ? '<button class="btn secondary btnCompletarLote" data-codigo="'+esc(item.codigo)+'" style="padding:4px 8px;margin-right:6px;" title="Informar o lote que faltou">+ lote faltante</button>'
+      : '';
     const btnApagar = temAlgoParaApagar
       ? '<button class="btn danger btnLimparItem" data-codigo="'+esc(item.codigo)+'" style="padding:4px 8px;" title="Apagar bipagem deste item">✕</button>'
       : '';
@@ -1445,7 +1527,7 @@ function renderBipagemTable(){
       '<td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
       '<td><b>'+st.resultado+'</b>'+(st.tipo&&st.tipo!=='—'?' — '+st.tipo:'')+'</td>' +
       '<td>'+st.acao+'</td>' +
-      '<td>'+btnApagar+'</td>' +
+      '<td>'+btnCompletar+btnApagar+'</td>' +
       '</tr>';
   }).join('');
   const conformes_pendentes_txt = pendentes>0
@@ -2380,6 +2462,61 @@ async function corrigirLotesClassificadosErrado(){
   if(alterouReferencia||alterouConhecidos){ renderAll(); mostrarToast('✅ Lotes fornecedor/institucional corrigidos automaticamente.'); }
 }
 
+/* ---------------- Controle de Lacres ---------------- */
+function lacHojeLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function lacAgoraLocal(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function prepararFormLacre(){
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el && !el.value) el.value=v; };
+  set('lacData',lacHojeLocal()); set('lacHora',lacAgoraLocal());
+  const u=usuarioAtual(); if(u){ set('lacNome',u.nome||''); set('lacDrt',u.matricula||''); }
+  renderLacres();
+}
+function lacCaixaNome(id){ const c=state.referencia[id]; const base=CAIXAS.find(x=>x.id===id); return (c&&c.nome)||(base&&base.nome)||id; }
+function renderLacres(){
+  const tbody=document.querySelector('#lacresTable tbody'); if(!tbody) return;
+  const opts=CAIXAS.map(c=>'<option value="'+c.id+'">'+esc(lacCaixaNome(c.id))+'</option>').join('');
+  const selF=document.getElementById('lacFiltroCaixa'); const selC=document.getElementById('lacCaixa');
+  if(selC && document.activeElement!==selC){ const v=selC.value||state.caixaId; selC.innerHTML=opts; selC.value=v; }
+  if(selF && document.activeElement!==selF){ const v=selF.value||'__all__'; selF.innerHTML='<option value="__all__">Todas as caixas</option>'+opts; selF.value=v; }
+  const filtro=selF?selF.value:'__all__';
+  const lista=(state.lacres||[]).filter(r=>!filtro||filtro==='__all__'||r.caixaId===filtro);
+  tbody.innerHTML=lista.map(r=>
+    '<tr><td>'+esc(r.data?fmtDateBR(r.data):'')+'</td><td>'+esc(r.hora||'')+'</td><td>'+esc(r.lacre1||r.lacreRetirado||'')+'</td><td>'+esc(r.lacre2||r.lacreNovo||'')+'</td><td>'+esc(r.caixaNome||'')+'</td><td>'+esc(r.nome||'')+'</td><td>'+esc(r.drt||'')+'</td>'+
+    '<td>'+esc(r.cheque1||'')+'</td><td>'+esc(r.cheque2||r.cheque||'')+'</td><td>'+esc(r.obs||'')+'</td>'+
+    '<td><button class="btn danger btnDelLacre" data-id="'+esc(r.id)+'" style="padding:4px 8px;">✕</button></td></tr>'
+  ).join('')||'<tr><td colspan="11" class="muted">Nenhum registro ainda.</td></tr>';
+}
+async function registrarLacre(){
+  const g=(id)=>String((document.getElementById(id)||{}).value||'').trim();
+  const data=g('lacData'), hora=g('lacHora'), lacre1=g('lacNum1'), lacre2=g('lacNum2'), caixaId=g('lacCaixa'), nome=g('lacNome'), drt=g('lacDrt'), cheque1=g('lacCheque1'), cheque2=g('lacCheque2'), obs=g('lacObs');
+  if(!data||!hora){ mostrarToast('Informe data e horário.','erro'); return false; }
+  if(!lacre1 || !lacre2){ mostrarToast('Informe os números dos 2 lacres.','erro'); return false; }
+  if(!caixaId){ mostrarToast('Escolha a caixa.','erro'); return false; }
+  if(!nome||!drt){ mostrarToast('Informe nome e DRT.','erro'); return false; }
+  const agora=new Date();
+  const rec={id:'LAC-'+agora.getTime()+'-'+Math.random().toString(36).slice(2,6), data, hora, lacre1, lacre2, caixaId, caixaNome:lacCaixaNome(caixaId), nome, drt, cheque1, cheque2, obs, registradoPor:(usuarioAtual()||{}).nome||nome, criadoEm:agora.toISOString()};
+  state.lacres=[rec,...(state.lacres||[]).filter(x=>x.id!==rec.id)];
+  renderLacres();
+  ['lacNum1','lacNum2','lacCheque1','lacCheque2','lacObs'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const h=document.getElementById('lacHora'); if(h) h.value=lacAgoraLocal();
+  try{
+    if(dbApi) await dbApi.doc('lacres/'+rec.id).set(rec);
+    mostrarToast('✅ Lacre registrado.');
+  }catch(e){ console.error(e); mostrarToast('⚠️ Registrado aqui, mas não sincronizou agora.','erro'); }
+  return true;
+}
+document.getElementById('btnRegistrarLacre').addEventListener('click',registrarLacre);
+document.getElementById('lacFiltroCaixa').addEventListener('change',renderLacres);
+document.querySelector('#lacresTable tbody').addEventListener('click', async (e)=>{
+  const btn=e.target.closest('.btnDelLacre'); if(!btn) return;
+  const r=(state.lacres||[]).find(x=>x.id===btn.dataset.id); if(!r) return;
+  const ok=await confirmarEstilizado('Excluir registro de lacre?','<div class="muted">Excluir o registro de <b>'+esc(r.data?fmtDateBR(r.data):'')+' '+esc(r.hora||'')+'</b> ('+esc(r.caixaNome||'')+', '+esc(r.nome||'')+')? Essa ação não pode ser desfeita.</div>','Excluir','Cancelar');
+  if(!ok) return;
+  state.lacres=state.lacres.filter(x=>x.id!==r.id); renderLacres();
+  if(dbApi){ try{ await dbApi.doc('lacres/'+r.id).delete(); }catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.','erro'); } }
+});
+function subscribeLacres(){ dbApi.collection('lacres').orderBy('criadoEm','desc').limit(500).onSnapshot(snap=>{ state.lacres=snap.docs.map(d=>d.data()); renderLacres(); }, err=>console.error(err)); }
+
 function renderAll(){
   fillCaixaSelects();
   renderBipagemTable();
@@ -2396,6 +2533,7 @@ function renderAll(){
   fillUsuarioSelect();
   renderMapeamentoTable();
   renderAuditoriaCadastros();
+  renderLacres();
 }
 
 /* ---------------- DB / persistence ---------------- */
@@ -2589,6 +2727,7 @@ function switchTab(tab){
     if (heartbeatInterval){ pararHeartbeat(); liberarEmUso(state.caixaId); }
   }
   if (tab==='consultar') setTimeout(()=>document.getElementById('consultaInput').focus(), 50);
+  if (tab==='lacres') prepararFormLacre();
 }
 function updateClock(){
   const now = new Date();
@@ -2640,6 +2779,7 @@ setTimeout(()=>corrigirLotesClassificadosErrado().catch(console.error), 2500);
       await subscribeUsuarios();
       subscribeStatusCaixas();
       subscribeEmUso();
+      subscribeLacres();
     } catch(e){
       console.error(e);
       document.getElementById('dbBanner').innerHTML = '<div class="banner">Não foi possível conectar ao banco compartilhado agora (verifique a conexão com a internet). Trabalhando em modo local nesta sessão.</div>';
@@ -2720,6 +2860,8 @@ document.getElementById('btnManual').addEventListener('click', async ()=>{
   }
 });
 document.querySelector('#bipagemTable tbody').addEventListener('click', async (e)=>{
+  const btnComp = e.target.closest('.btnCompletarLote');
+  if (btnComp){ await completarLoteFaltante(btnComp.dataset.codigo); return; }
   const btn = e.target.closest('.btnLimparItem');
   if (!btn) return;
   const codigo = btn.dataset.codigo;
