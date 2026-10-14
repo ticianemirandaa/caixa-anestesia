@@ -198,7 +198,7 @@ a{color:var(--primary);}
       <div class="table-wrap">
         <table id="bipagemTable">
           <thead><tr>
-            <th>Código</th><th>Medicamento</th><th>Qtd. esperada</th><th>Qtd. bipada</th>
+            <th>Código</th><th>Medicamento</th><th>Qtd. esperada</th><th id="thRepostoQtd" style="display:none;">Qtd. reposta</th><th>Qtd. bipada</th>
             <th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Resultado</th><th>Ação</th><th></th>
           </tr></thead>
           <tbody></tbody>
@@ -312,12 +312,8 @@ a{color:var(--primary);}
         <div><label class="muted lac-lbl">Nº do Lacre 1</label><input type="text" id="lacNum1" class="small-input" autocomplete="off"></div>
         <div><label class="muted lac-lbl">Nº do Lacre 2</label><input type="text" id="lacNum2" class="small-input" autocomplete="off"></div>
         <div><label class="muted lac-lbl">Caixa</label><select id="lacCaixa" class="small-input"></select></div>
-        <div><label class="muted lac-lbl">Nome</label><input type="text" id="lacNome" class="small-input" autocomplete="off"></div>
+        <div><label class="muted lac-lbl">Nome (1º cheque)</label><input type="text" id="lacNome" class="small-input" autocomplete="off"></div>
         <div><label class="muted lac-lbl">DRT</label><input type="text" id="lacDrt" class="small-input" autocomplete="off"></div>
-      </div>
-      <div class="grid2" style="margin-bottom:10px;">
-        <div><label class="muted lac-lbl">1º Cheque</label><input type="text" id="lacCheque1" class="small-input" placeholder="Nome / DRT de quem fez o 1º cheque" autocomplete="off"></div>
-        <div><label class="muted lac-lbl">2º Cheque</label><input type="text" id="lacCheque2" class="small-input" placeholder="Nome / DRT de quem fez o 2º cheque" autocomplete="off"></div>
       </div>
       <div style="margin-bottom:12px;"><label class="muted lac-lbl">Observações</label><textarea id="lacObs" class="small-input" rows="3"></textarea></div>
       <button class="btn" id="btnRegistrarLacre">Registrar lacre</button>
@@ -327,8 +323,9 @@ a{color:var(--primary);}
         <h2 style="margin:0;">Registros (para controle)</h2>
         <select id="lacFiltroCaixa"></select>
       </div>
+      <div id="lacPendentes" class="muted" style="margin-bottom:10px;font-weight:700;"></div>
       <div class="table-wrap">
-        <table id="lacresTable"><thead><tr><th>Data</th><th>Horário</th><th>Lacre 1</th><th>Lacre 2</th><th>Caixa</th><th>Nome</th><th>DRT</th><th>1º Cheque</th><th>2º Cheque</th><th>Observações</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="lacresTable"><thead><tr><th>Data</th><th>Horário</th><th>Lacre 1</th><th>Lacre 2</th><th>Caixa</th><th>1º Cheque</th><th>2º Cheque</th><th>Observações</th><th></th></tr></thead><tbody></tbody></table>
       </div>
     </div>
   </section>
@@ -1431,8 +1428,13 @@ function renderLastScan(){
     '<div class="blk"><div class="lbl">Validade</div><div class="val">'+(s.validade?fmtDateBR(s.validade):'—')+'</div></div>' +
     '<div class="blk"><div class="lbl">Dias p/ vencer</div><div class="val">'+(dias===null?'—':dias)+'</div></div>' +
     '<div class="blk"><div class="lbl">Status</div><div class="val"><span class="badge '+cd.cls+'">'+cd.label+'</span></div></div>' +
+    ((!!s.loteFornecedor!==!!s.loteInstitucional) ? '<div style="width:100%;"><button class="btn secondary btnCompletarLote" data-codigo="'+esc(s.codigo)+'">✏️ Informar lote '+(s.loteFornecedor?'Einstein':'fornecedor')+' faltante</button></div>' : '') +
     '</div>';
 }
+document.getElementById('lastScanCard').addEventListener('click', async (e)=>{
+  const b=e.target.closest('.btnCompletarLote'); if(!b) return;
+  await completarLoteFaltante(b.dataset.codigo);
+});
 
 function renderRepInfoPanel(){
   const panel = document.getElementById('repInfoPanel');
@@ -1449,14 +1451,13 @@ function renderRepInfoPanel(){
     '</div>';
 }
 
-// Reposição: completa, na própria bipagem, o lote que faltou (só tem fornecedor OU só tem Einstein).
+// Reposição e conferência: completa, na própria bipagem, o lote que faltou (só tem fornecedor OU só tem Einstein).
 function lotesIncompletosDaSessao(codigo){
   const sc=state.session[String(codigo)];
   if(!sc) return [];
   return Object.entries(sc.lotes).filter(([k,l])=>!!l.loteFornecedor!==!!l.loteInstitucional).map(([k,l])=>({k,l}));
 }
 async function completarLoteFaltante(codigo){
-  if(state.modo!=='REPOSICAO') return;
   const lista=lotesIncompletosDaSessao(codigo);
   if(!lista.length){ mostrarToast('Nenhum lote faltando neste item.'); return; }
   const item=findItemAnyCaixa(codigo);
@@ -1476,13 +1477,25 @@ async function completarLoteFaltante(codigo){
     const {k,l}=lista[i];
     const novoF=l.loteFornecedor||digitado, novoI=l.loteInstitucional||digitado;
     if(canonLoteComparacao(novoF)===canonLoteComparacao(novoI)){ mostrarToast('Fornecedor e Einstein não podem ser iguais.', 'erro'); continue; }
+    // Conferência: o valor digitado não pode contrariar o cadastro (senão esconderia uma divergência real).
+    if(state.modo==='CONFERENCIA'){
+      const itCad=findItemByCodigo(state.caixaId,codigo);
+      const cad=itCad&&(itCad.lotes||[]).find(x=>(l.loteFornecedor&&canonLoteComparacao(x.loteFornecedor)===canonLoteComparacao(l.loteFornecedor))||(l.loteInstitucional&&canonLoteComparacao(x.loteInstitucional)===canonLoteComparacao(l.loteInstitucional)));
+      const outroCad=cad&&(l.loteFornecedor?cad.loteInstitucional:cad.loteFornecedor);
+      if(outroCad && canonLoteComparacao(outroCad)!==canonLoteComparacao(digitado)){
+        await confirmarEstilizado('Valor diferente do cadastro','<div class="muted">O cadastro desta caixa tem <b>'+esc(cad.loteFornecedor||'—')+'</b> ↔ <b>'+esc(cad.loteInstitucional||'—')+'</b>. Você informou <b>'+esc(digitado)+'</b>, que é diferente: isso é uma <b>divergência</b> e não foi aplicado. Se o cadastro estiver errado, corrija-o na aba Cadastro ou atualize ao finalizar a conferência.</div>','Entendi','Fechar');
+        continue;
+      }
+    }
     // mesma unidade: a quantidade é movida, nunca duplicada
     delete sc.lotes[k];
     const nk=loteKey(novoF,novoI);
     if(sc.lotes[nk]){ sc.lotes[nk].qtd+=l.qtd; sc.lotes[nk].validade=sc.lotes[nk].validade||l.validade; }
     else sc.lotes[nk]={...l,loteFornecedor:novoF,loteInstitucional:novoI};
+    const ls=state.lastScan;
+    if(ls && String(ls.codigo)===String(codigo) && (ls.loteFornecedor||null)===(l.loteFornecedor||null) && (ls.loteInstitucional||null)===(l.loteInstitucional||null)){ ls.loteFornecedor=novoF; ls.loteInstitucional=novoI; }
     const validade=sc.lotes[nk].validade||null;
-    await garantirVinculoGlobalConfirmado(codigo,novoF,novoI,validade,'Você informou o lote faltante nesta reposição.');
+    await garantirVinculoGlobalConfirmado(codigo,novoF,novoI,validade,'Você informou o lote faltante durante a bipagem.');
     if(validade) await learnLote(codigo,novoF,novoI,validade);
     n++;
   }
@@ -1495,6 +1508,14 @@ document.addEventListener('click',(e)=>{
     closeModal(vals);
   } else if(e.target.id==='mCompletarCancel'){ closeModal(null); }
 });
+function qtdRepostaTexto(rep,item){
+  if(!rep) return '<span class="muted">—</span>';
+  const it=(rep.itens||[]).find(i=>String(i.codigo)===String(item.codigo));
+  if(!it) return '<span class="muted">—</span>';
+  const q=Number(it.qtdBipada||0);
+  const cor=q!==Number(item.qtde)?' style="color:var(--warn);font-weight:700;"':' style="font-weight:700;"';
+  return '<span'+cor+'>'+q+'</span>';
+}
 function renderBipagemTable(){
   document.getElementById('bipagemCaixaTitulo').textContent = 'Itens da caixa — ' + currentCaixa().nome;
   document.getElementById('scanTitulo').textContent = state.modo==='REPOSICAO' ? 'Bipar item da reposição' : 'Bipar item da conferência';
@@ -1502,6 +1523,10 @@ function renderBipagemTable(){
   const tbody = document.querySelector('#bipagemTable tbody');
   const itens = itensNaOrdemDeBipagem();
   let conformes=0, divergentes=0, pendentes=0;
+  // Conferência: mostra, em cada item, a quantidade que foi bipada na última reposição desta caixa.
+  const emConferencia = state.modo==='CONFERENCIA';
+  const repUltima = emConferencia ? state.historico.find(h=>h.tipo==='REPOSICAO' && h.caixaId===state.caixaId) : null;
+  document.getElementById('thRepostoQtd').style.display = emConferencia ? '' : 'none';
   tbody.innerHTML = itens.map(item=>{
     const scan = state.session[String(item.codigo)];
     let st = computeStatus(item, scan);
@@ -1513,7 +1538,7 @@ function renderBipagemTable(){
     const lI = scan ? Object.values(scan.lotes).map(l=>esc(l.loteInstitucional||'—')+' ('+l.qtd+')').join('<br>') : '—';
     const val = scan ? Object.values(scan.lotes).map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
     const temAlgoParaApagar = !!scan || state.pulados.has(String(item.codigo));
-    const btnCompletar = (state.modo==='REPOSICAO' && lotesIncompletosDaSessao(item.codigo).length)
+    const btnCompletar = (lotesIncompletosDaSessao(item.codigo).length)
       ? '<button class="btn secondary btnCompletarLote" data-codigo="'+esc(item.codigo)+'" style="padding:4px 8px;margin-right:6px;" title="Informar o lote que faltou">+ lote faltante</button>'
       : '';
     const btnApagar = temAlgoParaApagar
@@ -1523,6 +1548,7 @@ function renderBipagemTable(){
       '<td>'+esc(item.codigo)+'</td>' +
       '<td>'+esc(item.medicamento)+'</td>' +
       '<td>'+item.qtde+'</td>' +
+      (emConferencia ? '<td>'+qtdRepostaTexto(repUltima,item)+'</td>' : '') +
       '<td>'+st.qtdBipada+'</td>' +
       '<td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
       '<td><b>'+st.resultado+'</b>'+(st.tipo&&st.tipo!=='—'?' — '+st.tipo:'')+'</td>' +
@@ -2472,6 +2498,40 @@ function prepararFormLacre(){
   renderLacres();
 }
 function lacCaixaNome(id){ const c=state.referencia[id]; const base=CAIXAS.find(x=>x.id===id); return (c&&c.nome)||(base&&base.nome)||id; }
+function lacSegundoOk(r){ return !!(r.cheque2Nome || r.cheque2 || r.cheque); }
+function lacPrimeiroCheque(r){
+  const nome=r.cheque1Nome||r.nome||'', drt=r.cheque1Drt||r.drt||'';
+  return '<b>'+esc(nome)+'</b>'+(drt?' <span class="muted">('+esc(drt)+')</span>':'');
+}
+function lacSegundoCheque(r){
+  if(r.cheque2Nome) return '<b>'+esc(r.cheque2Nome)+'</b>'+(r.cheque2Drt?' <span class="muted">('+esc(r.cheque2Drt)+')</span>':'')+(r.cheque2Em?'<div class="muted">'+esc(fmtDateTimeBR(r.cheque2Em))+'</div>':'');
+  if(r.cheque2||r.cheque) return esc(r.cheque2||r.cheque);
+  return '<button class="btn btnAprovarLacre" data-id="'+esc(r.id)+'" style="padding:4px 8px;">Aprovar 2º cheque</button>';
+}
+function fmtDateTimeBR(iso){
+  const d=new Date(iso); if(isNaN(d)) return '';
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+async function aprovarSegundoCheque(id){
+  const r=(state.lacres||[]).find(x=>x.id===id);
+  if(!r || lacSegundoOk(r)) return false;
+  const u=usuarioAtual();
+  if(!u){ mostrarToast('Selecione o seu usuário na aba Usuários antes de aprovar.','erro'); return false; }
+  const norm=(v)=>String(v||'').trim().toLowerCase();
+  const mesma=(state.usuarioId && r.registradoPorId && r.registradoPorId===state.usuarioId) || (norm(u.matricula) && norm(u.matricula)===norm(r.cheque1Drt||r.drt));
+  if(mesma){
+    await confirmarEstilizado('Mesma pessoa','<div class="muted">O 2º cheque precisa ser feito por <b>outra pessoa</b>: o 1º cheque deste lacre foi de <b>'+esc(r.cheque1Nome||r.nome||'')+'</b>. Peça para a segunda pessoa selecionar o próprio usuário e aprovar.</div>','Entendi','Fechar');
+    return false;
+  }
+  const ok=await confirmarEstilizado('Aprovar 2º cheque?','<div class="muted">'+esc(r.caixaNome||'')+' · '+esc(r.data?fmtDateBR(r.data):'')+' '+esc(r.hora||'')+'<br>Lacres: <b>'+esc(r.lacre1||r.lacreRetirado||'')+'</b> e <b>'+esc(r.lacre2||r.lacreNovo||'')+'</b><br>1º cheque: <b>'+esc(r.cheque1Nome||r.nome||'')+'</b><br><br>2º cheque por: <b>'+esc(u.nome)+'</b>'+(u.matricula?' ('+esc(u.matricula)+')':'')+'</div>','Aprovar','Cancelar');
+  if(!ok) return false;
+  const upd={...r,cheque2Nome:u.nome,cheque2Drt:u.matricula||'',cheque2Em:new Date().toISOString(),cheque2PorId:state.usuarioId||null,status:'CONFERIDO'};
+  state.lacres=state.lacres.map(x=>x.id===id?upd:x);
+  renderLacres();
+  try{ if(dbApi) await dbApi.doc('lacres/'+id).set(upd); mostrarToast('✅ 2º cheque aprovado.'); }
+  catch(e){ console.error(e); mostrarToast('⚠️ Aprovado aqui, mas não sincronizou agora.','erro'); }
+  return true;
+}
 function renderLacres(){
   const tbody=document.querySelector('#lacresTable tbody'); if(!tbody) return;
   const opts=CAIXAS.map(c=>'<option value="'+c.id+'">'+esc(lacCaixaNome(c.id))+'</option>').join('');
@@ -2480,24 +2540,26 @@ function renderLacres(){
   if(selF && document.activeElement!==selF){ const v=selF.value||'__all__'; selF.innerHTML='<option value="__all__">Todas as caixas</option>'+opts; selF.value=v; }
   const filtro=selF?selF.value:'__all__';
   const lista=(state.lacres||[]).filter(r=>!filtro||filtro==='__all__'||r.caixaId===filtro);
+  const pend=document.getElementById('lacPendentes');
+  if(pend){ const n=(state.lacres||[]).filter(r=>!lacSegundoOk(r)).length; pend.textContent=n?('⏳ Aguardando 2º cheque: '+n):'✅ Nenhum lacre aguardando 2º cheque'; pend.style.color=n?'var(--warn)':''; }
   tbody.innerHTML=lista.map(r=>
-    '<tr><td>'+esc(r.data?fmtDateBR(r.data):'')+'</td><td>'+esc(r.hora||'')+'</td><td>'+esc(r.lacre1||r.lacreRetirado||'')+'</td><td>'+esc(r.lacre2||r.lacreNovo||'')+'</td><td>'+esc(r.caixaNome||'')+'</td><td>'+esc(r.nome||'')+'</td><td>'+esc(r.drt||'')+'</td>'+
-    '<td>'+esc(r.cheque1||'')+'</td><td>'+esc(r.cheque2||r.cheque||'')+'</td><td>'+esc(r.obs||'')+'</td>'+
+    '<tr><td>'+esc(r.data?fmtDateBR(r.data):'')+'</td><td>'+esc(r.hora||'')+'</td><td>'+esc(r.lacre1||r.lacreRetirado||'')+'</td><td>'+esc(r.lacre2||r.lacreNovo||'')+'</td><td>'+esc(r.caixaNome||'')+'</td><td>'+lacPrimeiroCheque(r)+'</td>'+
+    '<td>'+lacSegundoCheque(r)+'</td><td>'+esc(r.obs||'')+'</td>'+
     '<td><button class="btn danger btnDelLacre" data-id="'+esc(r.id)+'" style="padding:4px 8px;">✕</button></td></tr>'
-  ).join('')||'<tr><td colspan="11" class="muted">Nenhum registro ainda.</td></tr>';
+  ).join('')||'<tr><td colspan="9" class="muted">Nenhum registro ainda.</td></tr>';
 }
 async function registrarLacre(){
   const g=(id)=>String((document.getElementById(id)||{}).value||'').trim();
-  const data=g('lacData'), hora=g('lacHora'), lacre1=g('lacNum1'), lacre2=g('lacNum2'), caixaId=g('lacCaixa'), nome=g('lacNome'), drt=g('lacDrt'), cheque1=g('lacCheque1'), cheque2=g('lacCheque2'), obs=g('lacObs');
+  const data=g('lacData'), hora=g('lacHora'), lacre1=g('lacNum1'), lacre2=g('lacNum2'), caixaId=g('lacCaixa'), nome=g('lacNome'), drt=g('lacDrt'), obs=g('lacObs');
   if(!data||!hora){ mostrarToast('Informe data e horário.','erro'); return false; }
   if(!lacre1 || !lacre2){ mostrarToast('Informe os números dos 2 lacres.','erro'); return false; }
   if(!caixaId){ mostrarToast('Escolha a caixa.','erro'); return false; }
   if(!nome||!drt){ mostrarToast('Informe nome e DRT.','erro'); return false; }
   const agora=new Date();
-  const rec={id:'LAC-'+agora.getTime()+'-'+Math.random().toString(36).slice(2,6), data, hora, lacre1, lacre2, caixaId, caixaNome:lacCaixaNome(caixaId), nome, drt, cheque1, cheque2, obs, registradoPor:(usuarioAtual()||{}).nome||nome, criadoEm:agora.toISOString()};
+  const rec={id:'LAC-'+agora.getTime()+'-'+Math.random().toString(36).slice(2,6), data, hora, lacre1, lacre2, caixaId, caixaNome:lacCaixaNome(caixaId), nome, drt, cheque1Nome:nome, cheque1Drt:drt, cheque1Em:agora.toISOString(), registradoPorId:state.usuarioId||null, status:'AGUARDANDO_2_CHEQUE', obs, registradoPor:(usuarioAtual()||{}).nome||nome, criadoEm:agora.toISOString()};
   state.lacres=[rec,...(state.lacres||[]).filter(x=>x.id!==rec.id)];
   renderLacres();
-  ['lacNum1','lacNum2','lacCheque1','lacCheque2','lacObs'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['lacNum1','lacNum2','lacObs'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   const h=document.getElementById('lacHora'); if(h) h.value=lacAgoraLocal();
   try{
     if(dbApi) await dbApi.doc('lacres/'+rec.id).set(rec);
@@ -2508,6 +2570,8 @@ async function registrarLacre(){
 document.getElementById('btnRegistrarLacre').addEventListener('click',registrarLacre);
 document.getElementById('lacFiltroCaixa').addEventListener('change',renderLacres);
 document.querySelector('#lacresTable tbody').addEventListener('click', async (e)=>{
+  const apr=e.target.closest('.btnAprovarLacre');
+  if(apr){ await aprovarSegundoCheque(apr.dataset.id); return; }
   const btn=e.target.closest('.btnDelLacre'); if(!btn) return;
   const r=(state.lacres||[]).find(x=>x.id===btn.dataset.id); if(!r) return;
   const ok=await confirmarEstilizado('Excluir registro de lacre?','<div class="muted">Excluir o registro de <b>'+esc(r.data?fmtDateBR(r.data):'')+' '+esc(r.hora||'')+'</b> ('+esc(r.caixaNome||'')+', '+esc(r.nome||'')+')? Essa ação não pode ser desfeita.</div>','Excluir','Cancelar');
