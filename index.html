@@ -200,7 +200,7 @@ a{color:var(--primary);}
       <div class="table-wrap">
         <table id="bipagemTable">
           <thead><tr>
-            <th>Código</th><th>Medicamento</th><th>Qtd. esperada</th><th id="thRepostoQtd" style="display:none;">Qtd. reposta</th><th>Qtd. bipada</th>
+            <th>Código</th><th>Medicamento</th><th>Qtd. esperada</th><th id="thRepostoQtd" style="display:none;">Bipada na reposição</th><th>Qtd. bipada</th>
             <th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Resultado</th><th>Ação</th><th></th>
           </tr></thead>
           <tbody></tbody>
@@ -448,6 +448,7 @@ const state = {
   pulados: new Set(),
   historico: [],
   lacres: [],
+  qtdRepostos: {},   // {codigo: unidades repostas} — só para itens marcados em repostos
   repostos: null,   // Set de códigos marcados como repostos nesta reposição (só controle; a bipagem cobra TODOS os itens)
   session: {},
   lastScan: null,
@@ -1566,7 +1567,7 @@ function renderBipagemTable(){
         (repItens.length
           ? '<div class="info-banner" style="margin-bottom:10px;">'+
               '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;"><b>Repostos nesta reposição: '+repItens.length+'</b><button class="btn secondary" id="btnAlterarItens" style="padding:4px 12px;">Alterar</button></div>'+
-              '<div style="display:flex;flex-wrap:wrap;gap:6px;">'+repItens.map(i=>'<span class="badge ok" title="'+esc(i.medicamento)+'">'+esc(nomeCurto(i.medicamento))+'</span>').join('')+'</div>'+
+              '<div style="display:flex;flex-wrap:wrap;gap:6px;">'+repItens.map(i=>{ const t=textoQtdReposta(state.qtdRepostos[String(i.codigo)]||i.qtde, i.qtde); return '<span class="badge ok" title="'+esc(i.medicamento)+'">'+esc(nomeCurto(i.medicamento))+(t?' · '+t:'')+'</span>'; }).join('')+'</div>'+
             '</div>'
           : '<div class="info-banner" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;"><span>Nenhum item marcado como reposto</span><button class="btn secondary" id="btnAlterarItens" style="padding:4px 12px;">Marcar repostos</button></div>'); } }
   let conformes=0, divergentes=0, pendentes=0;
@@ -1595,7 +1596,7 @@ function renderBipagemTable(){
       : '';
     return '<tr class="'+st.cls+'">' +
       '<td>'+esc(item.codigo)+'</td>' +
-      '<td>'+esc(item.medicamento)+(foiReposto(item)?' <span class="badge ok" style="margin-left:6px;">reposto</span>':'')+'</td>' +
+      '<td>'+esc(item.medicamento)+(foiReposto(item)?' <span class="badge ok" style="margin-left:6px;">reposto'+(emConferencia&&repUltima&&textoQtdReposta((repUltima.qtdRepostos||{})[String(item.codigo)],item.qtde)?' ('+textoQtdReposta((repUltima.qtdRepostos||{})[String(item.codigo)],item.qtde)+')':(!emConferencia&&textoQtdReposta(state.qtdRepostos[String(item.codigo)]||item.qtde,item.qtde)?' ('+textoQtdReposta(state.qtdRepostos[String(item.codigo)]||item.qtde,item.qtde)+')':''))+'</span>':'')+'</td>' +
       '<td>'+item.qtde+'</td>' +
       (emConferencia ? '<td>'+qtdRepostaTexto(repUltima,item)+'</td>' : '') +
       '<td>'+st.qtdBipada+'</td>' +
@@ -2086,6 +2087,25 @@ document.querySelector('#statusTable tbody').addEventListener('change', (e)=>{
 });
 
 /* ---------------- Histórico ---------------- */
+function textoQtdReposta(q, esperada){
+  // "1 de 2" só quando o item tem mais de 1 unidade e a quantidade reposta é conhecida
+  const e=Number(esperada), n=Number(q);
+  return (e>1 && n>0) ? n+' de '+e : '';
+}
+function nomeCurtoMedicamento(n){
+  // tira o sufixo de controle do final: "ALFAST 0,5MG/ML AP 5ML [CONT A1](MAVi)" -> "ALFAST 0,5MG/ML AP 5ML"
+  return String(n||'').replace(/\s*\[[^\]]*\]\s*(\([^)]*\))?\s*$/,'').trim() || String(n||'');
+}
+function chipsRepostosHtml(h, compacto){
+  if (!h || h.tipo!=='REPOSICAO' || !Array.isArray(h.itensRepostos) || !h.itensRepostos.length) return '';
+  const est = compacto ? 'padding:2px 8px;font-size:12px;' : '';
+  return h.itensRepostos.map(c=>{
+    const it=(h.itens||[]).find(x=>String(x.codigo)===String(c));
+    const nome=it?it.medicamento:String(c);
+    const t=it?textoQtdReposta((h.qtdRepostos||{})[String(c)], it.qtdEsperada):'';
+    return '<span class="badge ok" style="'+est+'" title="'+esc(nome)+'">'+esc(nomeCurtoMedicamento(nome))+(t?' · '+t:'')+'</span>';
+  }).join('');
+}
 function renderHistorico(){
   const selTipo = document.getElementById('histTipoSelect').value;
   const selCaixa = document.getElementById('histCaixaSelect').value;
@@ -2101,7 +2121,8 @@ function renderHistorico(){
     return '<tr class="histRow" data-id="'+h.confId+'" style="cursor:pointer;">' +
       '<td><b>'+histDisplayId(h)+'</b></td><td>'+tipoBadge+'</td><td>'+h.data+'</td><td>'+h.hora+'</td><td>'+esc(h.caixaNome)+'</td>' +
       '<td>'+esc(h.responsavelNome)+(h.responsavelMatricula?' ('+esc(h.responsavelMatricula)+')':'')+'</td>' +
-      '<td>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+' bipados'+((h.tipo==='REPOSICAO'&&Array.isArray(h.itensRepostos)&&h.itensRepostos.length)?'<div class="muted">Repostos: '+h.itensRepostos.map(c=>{const it=h.itens.find(x=>String(x.codigo)===String(c));return esc(it?it.medicamento:c);}).join(', ')+'</div>':'')+'</td>' +
+      '<td><div><b>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+'</b> bipados</div>'+
+        (chipsRepostosHtml(h,true) ? '<div style="margin-top:6px;"><div class="muted" style="font-size:12px;margin-bottom:3px;">📦 Repostos ('+h.itensRepostos.length+')</div><div style="display:flex;flex-wrap:wrap;gap:4px;">'+chipsRepostosHtml(h,true)+'</div></div>' : '')+'</td>' +
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
       '</tr>';
   }).join('');
@@ -2122,15 +2143,19 @@ function renderHistDetalhe(confId){
     const rep = state.historico.find(x=>x.confId===h.refReposicaoId);
     if (rep) vinculo = '<div class="info-banner">Conferência referente à reposição <b>'+histDisplayId(rep)+'</b>, feita por '+esc(rep.responsavelNome)+' em '+rep.data+' '+rep.hora+'.</div>';
   }
-  card.innerHTML = '<h2>'+histDisplayId(h)+' — '+esc(h.caixaNome)+' ('+h.data+' '+h.hora+', responsável: '+esc(h.responsavelNome)+(h.responsavelMatricula?' — matrícula '+esc(h.responsavelMatricula):'')+')</h2>' +
-    vinculo +
+  const repostosBloco = chipsRepostosHtml(h,false)
+    ? '<div class="info-banner" style="margin-bottom:10px;"><div style="margin-bottom:8px;"><b>📦 Repostos nesta reposição: '+h.itensRepostos.length+'</b></div><div style="display:flex;flex-wrap:wrap;gap:6px;">'+chipsRepostosHtml(h,false)+'</div></div>' : '';
+  const foiRep = (it)=>Array.isArray(h.itensRepostos) && h.itensRepostos.map(String).includes(String(it.codigo));
+  card.innerHTML = '<h2>'+histDisplayId(h)+' — '+esc(h.caixaNome)+'</h2>' +
+    '<div class="muted" style="margin-bottom:10px;">'+h.data+' às '+h.hora+' · responsável: <b>'+esc(h.responsavelNome)+'</b>'+(h.responsavelMatricula?' (matrícula '+esc(h.responsavelMatricula)+')':'')+'</div>' +
+    vinculo + repostosBloco +
     '<div class="table-wrap"><table><thead><tr><th>Código</th><th>Medicamento</th><th>Qtd esperada</th><th>Qtd bipada</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Resultado</th><th>Ação</th></tr></thead><tbody>' +
     h.itens.map(it=>{
       const cls = it.resultado==='CONFORME'?'row-ok': (it.resultado==='PREENCHER'||it.resultado==='EM ANDAMENTO')?'row-pendente':'row-lote';
       const lF = (it.lotesBipados||[]).map(l=>esc(l.loteFornecedor||'—')).join('<br>') || '—';
       const lI = (it.lotesBipados||[]).map(l=>esc(l.loteInstitucional||'—')).join('<br>') || '—';
       const val = (it.lotesBipados||[]).map(l=>fmtDateBR(l.validade)).join('<br>') || '—';
-      return '<tr class="'+cls+'"><td>'+esc(it.codigo)+'</td><td>'+esc(it.medicamento)+'</td><td>'+it.qtdEsperada+'</td><td>'+it.qtdBipada+'</td><td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
+      return '<tr class="'+cls+'"><td>'+esc(it.codigo)+'</td><td>'+esc(it.medicamento)+(foiRep(it)?' <span class="badge ok" style="margin-left:6px;">reposto'+(textoQtdReposta((h.qtdRepostos||{})[String(it.codigo)],it.qtdEsperada)?' ('+textoQtdReposta((h.qtdRepostos||{})[String(it.codigo)],it.qtdEsperada)+')':'')+'</span>':'')+'</td><td>'+it.qtdEsperada+'</td><td>'+it.qtdBipada+'</td><td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
         '<td>'+it.resultado+(it.tipoDivergencia&&it.tipoDivergencia!=='—'?' — '+it.tipoDivergencia:'')+'</td><td>'+it.acao+'</td></tr>';
     }).join('') + '</tbody></table></div>';
 }
@@ -2728,7 +2753,11 @@ async function finalizarBipagem(){
     itens, criadoEm: now.toISOString(),
     totalItensCaixa: caixa.itens.length
   };
-  if (state.modo==='REPOSICAO') doc.itensRepostos = itens.filter(i=>state.repostos && state.repostos.has(String(i.codigo))).map(i=>String(i.codigo));
+  if (state.modo==='REPOSICAO'){
+    doc.itensRepostos = itens.filter(i=>state.repostos && state.repostos.has(String(i.codigo))).map(i=>String(i.codigo));
+    doc.qtdRepostos = {};
+    doc.itensRepostos.forEach(c=>{ const it=itens.find(x=>String(x.codigo)===c); const max=Number(it.qtdEsperada)||1; doc.qtdRepostos[c]=Math.min(Math.max(Number(state.qtdRepostos[c])||max,1),max); });
+  }
   if (state.modo==='CONFERENCIA'){
     const rep = state.historico.find(h=>h.tipo==='REPOSICAO' && h.caixaId===state.caixaId);
     if (rep) doc.refReposicaoId = rep.confId;
@@ -2752,7 +2781,7 @@ async function finalizarBipagem(){
         else mostrarToast('Conferência salva. Cadastro mantido como estava.');
       } else mostrarToast('✅ Conferência salva sem divergências.');
     }
-    state.session = {}; state.lastScan = null; state.pulados = new Set(); state.repostos = null;
+    state.session = {}; state.lastScan = null; state.pulados = new Set(); state.repostos = null; state.qtdRepostos = {};
     renderLastScan(); renderBipagemTable(); renderHistorico(); renderRepInfoPanel(); renderProximoItem();
     setTimeout(()=>abrirSeletorBipagem(), 400);   // próxima reposição/conferência: escolhe caixa, modo e itens
   } catch(e){ console.error(e); mostrarToast('Não foi possível salvar agora. Tente novamente.', 'erro'); }
@@ -2844,6 +2873,18 @@ function atualizarContadorSel(){
   const n=document.querySelectorAll('.chkItemSel:checked').length;
   const b=document.getElementById('selOk'); if(b) b.textContent=(window.__selLabel||'Começar')+' ('+n+')';
 }
+function qtdSeletorHtml(it, marcado, qtds){
+  const n=Number(it.qtde)||1;
+  if(n<=1) return '<span class="muted">1 un.</span>';
+  const atual=Math.min(Math.max(Number((qtds||{})[String(it.codigo)])||n,1),n);
+  let op=''; for(let i=1;i<=n;i++) op+='<option value="'+i+'"'+(i===atual?' selected':'')+'>'+i+'</option>';
+  return '<span style="display:flex;align-items:center;gap:4px;flex:none;"><select class="selQtdRep" data-codigo="'+esc(String(it.codigo))+'"'+(marcado?'':' disabled')+' style="width:auto;padding:4px 6px;">'+op+'</select><span class="muted">de '+n+'</span></span>';
+}
+function sincronizarSelQtd(){
+  document.querySelectorAll('.chkItemSel').forEach(c=>{
+    const sel=document.querySelector('.selQtdRep[data-codigo="'+c.value+'"]'); if(sel) sel.disabled=!c.checked;
+  });
+}
 async function escolherItensDaBipagem(caixaId, modo, preMarcados, opts){
   opts=opts||{};
   const cx=state.referencia[caixaId]||{itens:[]};
@@ -2851,9 +2892,9 @@ async function escolherItensDaBipagem(caixaId, modo, preMarcados, opts){
   const ur=modo==='CONFERENCIA'?ultimaReposicaoCodigos(caixaId):null;
   window.__selRepostos=ur?ur.codigos:[]; window.__selLabel=opts.labelOk||'Começar';
   const dica = modo==='REPOSICAO'
-    ? 'Marque os itens que foram repostos (fica registrado no histórico). Todos os itens da caixa continuam precisando ser bipados.'
+    ? 'Marque os itens repostos e, nos que têm mais de 1 unidade, quantas foram repostas (fica registrado no histórico). Todos os itens da caixa continuam precisando ser bipados.'
     : (ur ? 'Pré-marcados: itens repostos na última reposição ('+esc(ur.rep.data||'')+' '+esc(ur.rep.hora||'')+', '+esc(ur.rep.responsavelNome||'')+').' : 'Marque os itens a conferir.');
-  const linhas=(cx.itens||[]).map(it=>'<label style="display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--border);cursor:pointer;"><input type="checkbox" class="chkItemSel" value="'+esc(String(it.codigo))+'"'+(pre.has(String(it.codigo))?' checked':'')+' style="width:22px;height:22px;flex:none;"><span style="flex:1;">'+esc(it.medicamento)+'</span><span class="muted">'+esc(String(it.qtde))+' un.</span></label>').join('');
+  const linhas=(cx.itens||[]).map(it=>'<label style="display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--border);cursor:pointer;"><input type="checkbox" class="chkItemSel" value="'+esc(String(it.codigo))+'"'+(pre.has(String(it.codigo))?' checked':'')+' style="width:22px;height:22px;flex:none;"><span style="flex:1;">'+esc(it.medicamento)+'</span>'+qtdSeletorHtml(it, pre.has(String(it.codigo)), opts.qtds)+'</label>').join('');
   const html='<h3>'+(modo==='REPOSICAO'?'Quais itens foram repostos?':'Quais itens conferir?')+'</h3>'+
     '<div class="muted" style="margin-bottom:8px;">'+dica+'</div>'+
     '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;"><button class="btn secondary" id="selTodos" style="padding:6px 12px;">Todos</button><button class="btn secondary" id="selNenhum" style="padding:6px 12px;">Nenhum</button>'+(ur?'<button class="btn secondary" id="selRepostos" style="padding:6px 12px;">Só os repostos</button>':'')+'</div>'+
@@ -2863,24 +2904,26 @@ async function escolherItensDaBipagem(caixaId, modo, preMarcados, opts){
 }
 document.addEventListener('click',(e)=>{
   const id=e.target.id; if(!id) return;
-  const marcar=(fn)=>{ document.querySelectorAll('.chkItemSel').forEach(c=>{ c.checked=fn(c.value); }); atualizarContadorSel(); };
+  const marcar=(fn)=>{ document.querySelectorAll('.chkItemSel').forEach(c=>{ c.checked=fn(c.value); }); sincronizarSelQtd(); atualizarContadorSel(); };
   if(id==='selTodos') marcar(()=>true);
   else if(id==='selNenhum') marcar(()=>false);
   else if(id==='selRepostos'){ const r=new Set(window.__selRepostos||[]); marcar(v=>r.has(v)); }
   else if(id==='selOk'){
     const cods=[...document.querySelectorAll('.chkItemSel')].filter(c=>c.checked).map(c=>c.value);
     if(!cods.length){ mostrarToast('Marque pelo menos 1 item.','erro'); return; }
-    closeModal({acao:'ok',codigos:cods});
+    const qtds={}; document.querySelectorAll('.selQtdRep').forEach(x=>{ if(cods.includes(x.dataset.codigo)) qtds[x.dataset.codigo]=Number(x.value); });
+    cods.forEach(c=>{ if(!qtds[c]) qtds[c]=1; });
+    closeModal({acao:'ok',codigos:cods,qtds});
   }
   else if(id==='selVoltar') closeModal({acao:'voltar'});
   else if(id==='selCancelar') closeModal(null);
 });
-document.addEventListener('change',(e)=>{ if(e.target.classList&&e.target.classList.contains('chkItemSel')) atualizarContadorSel(); });
+document.addEventListener('change',(e)=>{ if(e.target.classList&&e.target.classList.contains('chkItemSel')){ sincronizarSelQtd(); atualizarContadorSel(); } });
 async function alterarItensDaBipagem(){
   if(state.modo!=='REPOSICAO') return false;
-  const sel=await escolherItensDaBipagem(state.caixaId,'REPOSICAO',state.repostos?[...state.repostos]:[],{labelOk:'Aplicar',voltar:false});
+  const sel=await escolherItensDaBipagem(state.caixaId,'REPOSICAO',state.repostos?[...state.repostos]:[],{labelOk:'Aplicar',voltar:false,qtds:state.qtdRepostos});
   if(!sel||sel.acao!=='ok') return false;
-  state.repostos=new Set(sel.codigos);
+  state.repostos=new Set(sel.codigos); state.qtdRepostos=sel.qtds||{};
   renderBipagemTable();
   return true;
 }
@@ -2903,7 +2946,7 @@ let rascunhoLiberado=false;   // só passa a gravar/apagar depois de oferecer a 
 function salvarRascunhoBipagem(){
   if(!rascunhoLiberado) return;
   try{
-    if(bipagemEmAndamento()) localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({caixaId:state.caixaId,modo:state.modo,session:state.session,pulados:[...state.pulados],repostos:state.repostos?[...state.repostos]:null,usuarioId:state.usuarioId||null,salvoEm:new Date().toISOString()}));
+    if(bipagemEmAndamento()) localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({caixaId:state.caixaId,modo:state.modo,session:state.session,pulados:[...state.pulados],repostos:state.repostos?[...state.repostos]:null,qtdRepostos:state.qtdRepostos||{},usuarioId:state.usuarioId||null,salvoEm:new Date().toISOString()}));
     else localStorage.removeItem(CHAVE_RASCUNHO);
   }catch(e){}
 }
@@ -2925,7 +2968,7 @@ async function oferecerRetomarRascunho(){
     const quando=new Date(d.salvoEm);
     const retomar=await confirmarEstilizado('Bipagem não finalizada encontrada','<div class="muted">Há uma <b>'+(d.modo==='REPOSICAO'?'reposição':'conferência')+'</b> da caixa <b>'+esc(nomeCx)+'</b> com <b>'+n+'</b> unidade(s) bipada(s), salva em '+fmtDateBR(d.salvoEm.slice(0,10))+' '+fmtTimeBR(quando)+', que não foi finalizada. Deseja retomar de onde parou?</div>','Retomar','Descartar');
     if(retomar){
-      state.caixaId=d.caixaId; state.modo=d.modo; state.session=d.session; state.pulados=new Set(d.pulados||[]); state.repostos=d.repostos?new Set(d.repostos):null; state.lastScan=null;
+      state.caixaId=d.caixaId; state.modo=d.modo; state.session=d.session; state.pulados=new Set(d.pulados||[]); state.repostos=d.repostos?new Set(d.repostos):null; state.qtdRepostos=d.qtdRepostos||{}; state.lastScan=null;
       document.getElementById('caixaSelect').value=d.caixaId;
       document.getElementById('modoReposicao').classList.toggle('active', d.modo==='REPOSICAO');
       document.getElementById('modoConferencia').classList.toggle('active', d.modo==='CONFERENCIA');
@@ -2938,10 +2981,10 @@ async function oferecerRetomarRascunho(){
 }
 if(typeof window.addEventListener==='function') window.addEventListener('beforeunload',(e)=>{ if(bipagemEmAndamento()){ e.preventDefault(); e.returnValue=''; return ''; } });
 function bipagemEmAndamento(){ return Object.keys(state.session||{}).length>0 || (state.pulados&&state.pulados.size>0); }
-function aplicarCaixaEModo(caixaId, modo, selecionados){
+function aplicarCaixaEModo(caixaId, modo, selecionados, qtds){
   const caixaAnterior=state.caixaId;
   state.caixaId=caixaId; state.modo=modo; state.session={}; state.lastScan=null; state.pulados=new Set();
-  state.repostos=selecionados||null;
+  state.repostos=selecionados||null; state.qtdRepostos=qtds||{};
   document.getElementById('caixaSelect').value=caixaId;
   document.getElementById('modoReposicao').classList.toggle('active', modo==='REPOSICAO');
   document.getElementById('modoConferencia').classList.toggle('active', modo==='CONFERENCIA');
@@ -2967,7 +3010,7 @@ async function abrirSeletorBipagem(){
     if(!sel || (sel.acao!=='ok' && sel.acao!=='voltar')) return false;
     if(sel.acao==='voltar'){ r=await showModal(html); continue; }
     if(!(await confirmarSairDaBipagem(DESCARTE_BIPAGEM))) return false;
-    aplicarCaixaEModo(r.caixaId, r.modo, new Set(sel.codigos));
+    aplicarCaixaEModo(r.caixaId, r.modo, new Set(sel.codigos), sel.qtds);
     return true;
   }
 }
@@ -3185,7 +3228,7 @@ async function tentarFinalizarBipagem(){
     if (!state.repostos || !state.repostos.size){
       const sel=await escolherItensDaBipagem(state.caixaId,'REPOSICAO',[],{labelOk:'Finalizar',voltar:false});
       if(!sel||sel.acao!=='ok') return;
-      state.repostos=new Set(sel.codigos);
+      state.repostos=new Set(sel.codigos); state.qtdRepostos=sel.qtds||{};
     }
     // item não marcado, mas com lote diferente do cadastro: provavelmente foi reposto e ficou sem marcar
     const suspeitos=caixa.itens.filter(it=>{
@@ -3196,7 +3239,7 @@ async function tentarFinalizarBipagem(){
     if (suspeitos.length){
       const ok=await confirmarEstilizado('Itens com lote diferente do cadastro','<div class="muted">Estes itens não estão marcados como repostos, mas o lote bipado é diferente do cadastro:</div><ul style="margin:8px 0;padding-left:18px;">'+suspeitos.map(i=>'<li>'+esc(i.medicamento)+'</li>').join('')+'</ul><div class="muted">Marcar como repostos?</div>','Marcar como repostos','Voltar');
       if(!ok) return;
-      suspeitos.forEach(i=>state.repostos.add(String(i.codigo)));
+      suspeitos.forEach(i=>{ state.repostos.add(String(i.codigo)); state.qtdRepostos[String(i.codigo)]=Number(i.qtde)||1; });
     }
   }
   await finalizarBipagem();
