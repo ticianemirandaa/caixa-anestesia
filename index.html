@@ -448,7 +448,7 @@ const state = {
   pulados: new Set(),
   historico: [],
   lacres: [],
-  selecionados: null,   // Set de códigos dos itens desta reposição/conferência (null = todos os itens da caixa)
+  repostos: null,   // Set de códigos marcados como repostos nesta reposição (só controle; a bipagem cobra TODOS os itens)
   session: {},
   lastScan: null,
   consultaAtual: null,
@@ -467,14 +467,27 @@ function fmtDateBR(d){
 function fmtTimeBR(d){ return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0'); }
 function fmtYYYYMMDD(d){ return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
 function fmtHHMMSS(d){ return String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0'); }
+// ID legível do histórico: TIPO-CAIXA-DIAMÊS-HORA  (ex.: REP-CX1-16OUT-1430 = reposição, caixa 1, 16/out, 14:30)
+const MESES_ID=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+function idHistoricoLegivel(tipo, caixaNome, quando){
+  const t = tipo==='REPOSICAO' ? 'REP' : 'CONF';
+  const m = String(caixaNome||'').match(/(\d+)/);
+  const cx = m ? 'CX'+m[1] : '';
+  const d = (quando instanceof Date && !isNaN(quando)) ? quando : null;
+  const p2 = n=>String(n).padStart(2,'0');
+  const dm = d ? p2(d.getDate())+MESES_ID[d.getMonth()] : '';
+  const hm = d ? p2(d.getHours())+p2(d.getMinutes()) : '';
+  return [t,cx,dm,hm].filter(Boolean).join('-');
+}
 function histDisplayId(h){
-  if (h && h.idCurto) return h.idCurto;
   if (!h) return '—';
-  const p = h.tipo==='REPOSICAO' ? 'R' : 'C';
-  const raw=String(h.confId||'');
-  const m=raw.match(/(\d{8})-(\d{6})$/);
-  if(m) return p+'-'+m[1].slice(6,8)+m[2].slice(0,4);
-  return raw || p;
+  let d = h.criadoEm ? new Date(h.criadoEm) : null;
+  if (!d || isNaN(d)){
+    const m = String(h.confId||'').match(/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+    d = m ? new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]) : null;
+  }
+  const id = idHistoricoLegivel(h.tipo, h.caixaNome||h.caixaId, d);
+  return id || String(h.idCurto||h.confId||'—');
 }
 function diasParaVencer(validadeISO){
   if(!validadeISO) return null;
@@ -497,9 +510,7 @@ function currentCaixa(){ return state.referencia[state.caixaId] || {nome:'', ite
 // Esta funcao cria apenas uma copia ordenada para exibicao/bipagem: nao altera o
 // cadastro, os lotes, as validades, as quantidades nem os dados proprios das caixas.
 function itensNaOrdemDeBipagem(caixa){
-  let itens = [...(((caixa || currentCaixa()).itens) || [])];
-  // Reposição/conferência parcial: só os itens escolhidos entram na bipagem (os demais ficam intactos).
-  if (state.selecionados) itens = itens.filter(it=>state.selecionados.has(String(it.codigo)));
+  const itens = [...(((caixa || currentCaixa()).itens) || [])];
   const caixaPadrao = state.referencia['c1'];
   if (!caixaPadrao || !Array.isArray(caixaPadrao.itens)) return itens;
   const posicao = new Map(caixaPadrao.itens.map((item, indice)=>[String(item.codigo), indice]));
@@ -1303,7 +1314,6 @@ document.addEventListener('click',(e)=>{ if(e.target.id==='qtdMaxOk') closeModal
 async function bipar(raw){
   const res = await resolveScan(raw);
   if (!res) return;
-  if (!(await garantirItemNaSelecao(res.codigo, res.medicamento))) return;
   const alvo = proximoItemPendente();
   if (alvo && String(alvo.codigo) !== String(res.codigo)){
     await avisoOrdemErrada(res.medicamento+' (código '+res.codigo+')', alvo.medicamento+' (código '+alvo.codigo+')');
@@ -1546,17 +1556,25 @@ function renderBipagemTable(){
   document.getElementById('bipagemCaixaTitulo').textContent = 'Itens da caixa — ' + currentCaixa().nome;
   document.getElementById('scanTitulo').textContent = state.modo==='REPOSICAO' ? 'Bipar item da reposição' : 'Bipar item da conferência';
   document.getElementById('btnFinalizar').textContent = state.modo==='REPOSICAO' ? 'Finalizar reposição' : 'Finalizar conferência';
+  salvarRascunhoBipagem();
   const tbody = document.querySelector('#bipagemTable tbody');
   const itens = itensNaOrdemDeBipagem();
   { const barra=document.getElementById('selecaoItensBar'); if(barra){
-      const total=(currentCaixa().itens||[]).length, nomeModo=state.modo==='REPOSICAO'?'desta reposição':'desta conferência';
-      barra.innerHTML = state.selecionados
-        ? '<div class="info-banner">Itens '+nomeModo+': <b>'+itens.length+' de '+total+'</b>'+(itens.length<=3?' — '+itens.map(i=>esc(i.medicamento)).join(', '):'')+' <button class="btn secondary" id="btnAlterarItens" style="padding:4px 10px;margin-left:8px;">Alterar itens</button></div>'
-        : '<div class="info-banner">Todos os itens da caixa ('+total+') <button class="btn secondary" id="btnAlterarItens" style="padding:4px 10px;margin-left:8px;">Escolher itens</button></div>'; } }
+      const repItens=(state.repostos?itens.filter(i=>state.repostos.has(String(i.codigo))):[]);
+      const nomeCurto=(n)=>String(n||'').replace(/\s*\[[^\]]*\]\s*(\([^)]*\))?\s*$/,'').trim()||String(n||'');
+      barra.innerHTML = state.modo!=='REPOSICAO' ? '' :
+        (repItens.length
+          ? '<div class="info-banner" style="margin-bottom:10px;">'+
+              '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;"><b>Repostos nesta reposição: '+repItens.length+'</b><button class="btn secondary" id="btnAlterarItens" style="padding:4px 12px;">Alterar</button></div>'+
+              '<div style="display:flex;flex-wrap:wrap;gap:6px;">'+repItens.map(i=>'<span class="badge ok" title="'+esc(i.medicamento)+'">'+esc(nomeCurto(i.medicamento))+'</span>').join('')+'</div>'+
+            '</div>'
+          : '<div class="info-banner" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;"><span>Nenhum item marcado como reposto</span><button class="btn secondary" id="btnAlterarItens" style="padding:4px 12px;">Marcar repostos</button></div>'); } }
   let conformes=0, divergentes=0, pendentes=0;
   // Conferência: mostra, em cada item, a quantidade que foi bipada na última reposição desta caixa.
   const emConferencia = state.modo==='CONFERENCIA';
   const repUltima = emConferencia ? state.historico.find(h=>h.tipo==='REPOSICAO' && h.caixaId===state.caixaId) : null;
+  const ur = emConferencia ? ultimaReposicaoCodigos(state.caixaId) : null;
+  const foiReposto = (item)=> emConferencia ? !!(ur && ur.codigos.includes(String(item.codigo))) : !!(state.repostos && state.repostos.has(String(item.codigo)));
   document.getElementById('thRepostoQtd').style.display = emConferencia ? '' : 'none';
   tbody.innerHTML = itens.map(item=>{
     const scan = state.session[String(item.codigo)];
@@ -1577,7 +1595,7 @@ function renderBipagemTable(){
       : '';
     return '<tr class="'+st.cls+'">' +
       '<td>'+esc(item.codigo)+'</td>' +
-      '<td>'+esc(item.medicamento)+'</td>' +
+      '<td>'+esc(item.medicamento)+(foiReposto(item)?' <span class="badge ok" style="margin-left:6px;">reposto</span>':'')+'</td>' +
       '<td>'+item.qtde+'</td>' +
       (emConferencia ? '<td>'+qtdRepostaTexto(repUltima,item)+'</td>' : '') +
       '<td>'+st.qtdBipada+'</td>' +
@@ -2083,7 +2101,7 @@ function renderHistorico(){
     return '<tr class="histRow" data-id="'+h.confId+'" style="cursor:pointer;">' +
       '<td><b>'+histDisplayId(h)+'</b></td><td>'+tipoBadge+'</td><td>'+h.data+'</td><td>'+h.hora+'</td><td>'+esc(h.caixaNome)+'</td>' +
       '<td>'+esc(h.responsavelNome)+(h.responsavelMatricula?' ('+esc(h.responsavelMatricula)+')':'')+'</td>' +
-      '<td>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+' bipados'+(h.parcial?'<div class="muted">parcial: '+h.itens.length+' de '+h.totalItensCaixa+' itens da caixa</div>':'')+'</td>' +
+      '<td>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+' bipados'+((h.tipo==='REPOSICAO'&&Array.isArray(h.itensRepostos)&&h.itensRepostos.length)?'<div class="muted">Repostos: '+h.itensRepostos.map(c=>{const it=h.itens.find(x=>String(x.codigo)===String(c));return esc(it?it.medicamento:c);}).join(', ')+'</div>':'')+'</td>' +
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
       '</tr>';
   }).join('');
@@ -2102,7 +2120,7 @@ function renderHistDetalhe(confId){
   let vinculo = '';
   if (h.tipo==='CONFERENCIA' && h.refReposicaoId){
     const rep = state.historico.find(x=>x.confId===h.refReposicaoId);
-    if (rep) vinculo = '<div class="info-banner">Conferência referente à reposição <b>'+rep.confId+'</b>, feita por '+esc(rep.responsavelNome)+' em '+rep.data+' '+rep.hora+'.</div>';
+    if (rep) vinculo = '<div class="info-banner">Conferência referente à reposição <b>'+histDisplayId(rep)+'</b>, feita por '+esc(rep.responsavelNome)+' em '+rep.data+' '+rep.hora+'.</div>';
   }
   card.innerHTML = '<h2>'+histDisplayId(h)+' — '+esc(h.caixaNome)+' ('+h.data+' '+h.hora+', responsável: '+esc(h.responsavelNome)+(h.responsavelMatricula?' — matrícula '+esc(h.responsavelMatricula):'')+')</h2>' +
     vinculo +
@@ -2685,7 +2703,7 @@ async function finalizarBipagem(){
     }
   }
   const caixa = currentCaixa();
-  const itens = caixa.itens.filter(it=>!state.selecionados || state.selecionados.has(String(it.codigo))).map(item=>{
+  const itens = caixa.itens.map(item=>{
     const scan = state.session[String(item.codigo)];
     const st = computeStatus(item, scan);
     return {
@@ -2700,7 +2718,7 @@ async function finalizarBipagem(){
   const now = new Date();
   const prefixo = state.modo==='REPOSICAO' ? 'REP' : 'CONF';
   const confId = prefixo+'-'+caixa.nome.replace(/[^A-Za-z0-9]+/g,'').slice(0,10)+'-'+fmtYYYYMMDD(now)+'-'+fmtHHMMSS(now);
-  const idCurto = (state.modo==='REPOSICAO'?'R':'C')+'-'+String(now.getDate()).padStart(2,'0')+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0')+String(now.getSeconds()).padStart(2,'0');
+  const idCurto = idHistoricoLegivel(state.modo, caixa.nome, now);
   const u = usuarioAtual();
   const doc = {
     confId, idCurto, tipo: state.modo,
@@ -2708,9 +2726,9 @@ async function finalizarBipagem(){
     caixaId: state.caixaId, caixaNome: caixa.nome,
     responsavelNome: u.nome, responsavelMatricula: u.matricula||'', responsavelId: state.usuarioId||null,
     itens, criadoEm: now.toISOString(),
-    parcial: itens.length < caixa.itens.length, totalItensCaixa: caixa.itens.length
+    totalItensCaixa: caixa.itens.length
   };
-  if (state.modo==='REPOSICAO') doc.itensRepostos = itens.map(i=>String(i.codigo)); else doc.itensConferidos = itens.map(i=>String(i.codigo));
+  if (state.modo==='REPOSICAO') doc.itensRepostos = itens.filter(i=>state.repostos && state.repostos.has(String(i.codigo))).map(i=>String(i.codigo));
   if (state.modo==='CONFERENCIA'){
     const rep = state.historico.find(h=>h.tipo==='REPOSICAO' && h.caixaId===state.caixaId);
     if (rep) doc.refReposicaoId = rep.confId;
@@ -2734,7 +2752,7 @@ async function finalizarBipagem(){
         else mostrarToast('Conferência salva. Cadastro mantido como estava.');
       } else mostrarToast('✅ Conferência salva sem divergências.');
     }
-    state.session = {}; state.lastScan = null; state.pulados = new Set(); state.selecionados = null;
+    state.session = {}; state.lastScan = null; state.pulados = new Set(); state.repostos = null;
     renderLastScan(); renderBipagemTable(); renderHistorico(); renderRepInfoPanel(); renderProximoItem();
     setTimeout(()=>abrirSeletorBipagem(), 400);   // próxima reposição/conferência: escolhe caixa, modo e itens
   } catch(e){ console.error(e); mostrarToast('Não foi possível salvar agora. Tente novamente.', 'erro'); }
@@ -2833,7 +2851,7 @@ async function escolherItensDaBipagem(caixaId, modo, preMarcados, opts){
   const ur=modo==='CONFERENCIA'?ultimaReposicaoCodigos(caixaId):null;
   window.__selRepostos=ur?ur.codigos:[]; window.__selLabel=opts.labelOk||'Começar';
   const dica = modo==='REPOSICAO'
-    ? 'Marque só os itens que foram repostos.'
+    ? 'Marque os itens que foram repostos (fica registrado no histórico). Todos os itens da caixa continuam precisando ser bipados.'
     : (ur ? 'Pré-marcados: itens repostos na última reposição ('+esc(ur.rep.data||'')+' '+esc(ur.rep.hora||'')+', '+esc(ur.rep.responsavelNome||'')+').' : 'Marque os itens a conferir.');
   const linhas=(cx.itens||[]).map(it=>'<label style="display:flex;align-items:center;gap:12px;padding:12px;border-bottom:1px solid var(--border);cursor:pointer;"><input type="checkbox" class="chkItemSel" value="'+esc(String(it.codigo))+'"'+(pre.has(String(it.codigo))?' checked':'')+' style="width:22px;height:22px;flex:none;"><span style="flex:1;">'+esc(it.medicamento)+'</span><span class="muted">'+esc(String(it.qtde))+' un.</span></label>').join('');
   const html='<h3>'+(modo==='REPOSICAO'?'Quais itens foram repostos?':'Quais itens conferir?')+'</h3>'+
@@ -2859,41 +2877,71 @@ document.addEventListener('click',(e)=>{
 });
 document.addEventListener('change',(e)=>{ if(e.target.classList&&e.target.classList.contains('chkItemSel')) atualizarContadorSel(); });
 async function alterarItensDaBipagem(){
-  const cx=currentCaixa();
-  const atual=state.selecionados?[...state.selecionados]:(cx.itens||[]).map(i=>String(i.codigo));
-  const sel=await escolherItensDaBipagem(state.caixaId,state.modo,atual,{labelOk:'Aplicar',voltar:false});
+  if(state.modo!=='REPOSICAO') return false;
+  const sel=await escolherItensDaBipagem(state.caixaId,'REPOSICAO',state.repostos?[...state.repostos]:[],{labelOk:'Aplicar',voltar:false});
   if(!sel||sel.acao!=='ok') return false;
-  const novo=new Set(sel.codigos);
-  const comBip=Object.keys(state.session).filter(c=>!novo.has(c)&&state.session[c].qtd>0);
-  if(comBip.length){
-    const nomes=comBip.map(c=>{const it=findItemByCodigo(state.caixaId,c);return '<li>'+esc(it?it.medicamento:c)+'</li>';}).join('');
-    const ok=await confirmarEstilizado('Descartar bipagem?','<div class="muted">Estes itens já têm bipagem e saíram da lista; a bipagem deles será descartada:</div><ul style="margin:8px 0 0 18px;padding:0;">'+nomes+'</ul>','Descartar','Voltar');
-    if(!ok) return false;
-  }
-  Object.keys(state.session).forEach(c=>{ if(!novo.has(c)) delete state.session[c]; });
-  [...state.pulados].forEach(c=>{ if(!novo.has(c)) state.pulados.delete(c); });
-  if(state.lastScan && !novo.has(String(state.lastScan.codigo))) state.lastScan=null;
-  state.selecionados=novo;
-  renderLastScan(); renderBipagemTable(); renderProximoItem();
+  state.repostos=new Set(sel.codigos);
+  renderBipagemTable();
   return true;
 }
 document.addEventListener('click',(e)=>{ if(e.target.id==='btnAlterarItens') alterarItensDaBipagem(); });
-// Item bipado que não está na lista desta reposição/conferência: pergunta se inclui.
-async function garantirItemNaSelecao(codigo, nome){
-  if(!state.selecionados || state.selecionados.has(String(codigo))) return true;
-  const item=findItemByCodigo(state.caixaId,codigo);
-  if(!item) return true;   // item de fora da caixa: segue para a trava de "fora desta caixa"
-  const ok=await confirmarEstilizado('Item fora da lista','<div class="muted"><b>'+esc(item.medicamento)+'</b> não está na lista de itens desta '+(state.modo==='REPOSICAO'?'reposição':'conferência')+'. Incluir?</div>','Incluir','Cancelar');
-  if(!ok) return false;
-  state.selecionados.add(String(codigo));
-  renderProximoItem(); renderBipagemTable();
-  return true;
+/* ---------- Proteção contra perda de reposição/conferência não finalizada ---------- */
+const DESCARTE_BIPAGEM = {msg:'Trocar a caixa ou o modo vai <b>descartar</b> essa bipagem.', sair:'Descartar e trocar'};
+async function confirmarSairDaBipagem(opts){
+  // true = pode seguir; false = a pessoa escolheu continuar bipando
+  if(!bipagemEmAndamento()) return true;
+  opts=opts||{};
+  const n=Object.values(state.session).reduce((t,x)=>t+(Number(x.qtd)||0),0);
+  const nome=state.modo==='REPOSICAO'?'reposição':'conferência';
+  const cx=(currentCaixa()||{}).nome||'';
+  const corpo='<div class="muted">Há uma <b>'+nome+'</b> em andamento ('+esc(cx)+', <b>'+n+'</b> unidade(s) bipada(s)) que ainda <b>não foi finalizada nem salva</b>.<br><br>'+(opts.msg||'')+'</div>';
+  const ficar=await confirmarEstilizado('⚠️ '+nome.charAt(0).toUpperCase()+nome.slice(1)+' não finalizada',corpo,'Continuar bipando',opts.sair||'Sair sem salvar');
+  return !ficar;
 }
+const CHAVE_RASCUNHO='psi_rascunho_bipagem';
+let rascunhoLiberado=false;   // só passa a gravar/apagar depois de oferecer a recuperação no início
+function salvarRascunhoBipagem(){
+  if(!rascunhoLiberado) return;
+  try{
+    if(bipagemEmAndamento()) localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({caixaId:state.caixaId,modo:state.modo,session:state.session,pulados:[...state.pulados],repostos:state.repostos?[...state.repostos]:null,usuarioId:state.usuarioId||null,salvoEm:new Date().toISOString()}));
+    else localStorage.removeItem(CHAVE_RASCUNHO);
+  }catch(e){}
+}
+function lerRascunhoBipagem(){
+  try{
+    const raw=localStorage.getItem(CHAVE_RASCUNHO); if(!raw) return null;
+    const d=JSON.parse(raw);
+    if(!d||!d.session||!d.caixaId||!d.modo||!Object.keys(d.session).length&&!(d.pulados||[]).length) return null;
+    if(Date.now()-new Date(d.salvoEm).getTime()>24*3600*1000) return null;   // rascunho com mais de 24h é ignorado
+    if(!CAIXAS.some(c=>c.id===d.caixaId)) return null;
+    return d;
+  }catch(e){ return null; }
+}
+async function oferecerRetomarRascunho(){
+  const d=lerRascunhoBipagem();
+  if(d && !bipagemEmAndamento()){
+    const n=Object.values(d.session).reduce((t,x)=>t+(Number(x.qtd)||0),0);
+    const nomeCx=(state.referencia[d.caixaId]&&state.referencia[d.caixaId].nome)||d.caixaId;
+    const quando=new Date(d.salvoEm);
+    const retomar=await confirmarEstilizado('Bipagem não finalizada encontrada','<div class="muted">Há uma <b>'+(d.modo==='REPOSICAO'?'reposição':'conferência')+'</b> da caixa <b>'+esc(nomeCx)+'</b> com <b>'+n+'</b> unidade(s) bipada(s), salva em '+fmtDateBR(d.salvoEm.slice(0,10))+' '+fmtTimeBR(quando)+', que não foi finalizada. Deseja retomar de onde parou?</div>','Retomar','Descartar');
+    if(retomar){
+      state.caixaId=d.caixaId; state.modo=d.modo; state.session=d.session; state.pulados=new Set(d.pulados||[]); state.repostos=d.repostos?new Set(d.repostos):null; state.lastScan=null;
+      document.getElementById('caixaSelect').value=d.caixaId;
+      document.getElementById('modoReposicao').classList.toggle('active', d.modo==='REPOSICAO');
+      document.getElementById('modoConferencia').classList.toggle('active', d.modo==='CONFERENCIA');
+      renderLastScan(); renderBipagemTable(); renderRepInfoPanel(); renderCadastroList(); renderOcupacaoBanner(); renderProximoItem();
+      switchTab('bipagem');
+    } else { try{ localStorage.removeItem(CHAVE_RASCUNHO); }catch(e){} }
+  }
+  rascunhoLiberado=true;
+  salvarRascunhoBipagem();
+}
+if(typeof window.addEventListener==='function') window.addEventListener('beforeunload',(e)=>{ if(bipagemEmAndamento()){ e.preventDefault(); e.returnValue=''; return ''; } });
 function bipagemEmAndamento(){ return Object.keys(state.session||{}).length>0 || (state.pulados&&state.pulados.size>0); }
 function aplicarCaixaEModo(caixaId, modo, selecionados){
   const caixaAnterior=state.caixaId;
   state.caixaId=caixaId; state.modo=modo; state.session={}; state.lastScan=null; state.pulados=new Set();
-  state.selecionados=selecionados||null;
+  state.repostos=selecionados||null;
   document.getElementById('caixaSelect').value=caixaId;
   document.getElementById('modoReposicao').classList.toggle('active', modo==='REPOSICAO');
   document.getElementById('modoConferencia').classList.toggle('active', modo==='CONFERENCIA');
@@ -2913,13 +2961,12 @@ async function abrirSeletorBipagem(){
   let r=await showModal(html);
   while(true){
     if(!r) return false;
-    // passo 2: quais itens (na reposição só o que foi reposto; na conferência, pré-marca os repostos)
-    const ur=r.modo==='CONFERENCIA'?ultimaReposicaoCodigos(r.caixaId):null;
-    const todos=((state.referencia[r.caixaId]||{}).itens||[]).map(i=>String(i.codigo));
-    const pre=r.modo==='REPOSICAO'?[]:((ur&&ur.codigos.length)?ur.codigos:todos);
-    const sel=await escolherItensDaBipagem(r.caixaId,r.modo,pre,{labelOk:'Começar',voltar:true});
+    if(r.modo==='CONFERENCIA'){ if(!(await confirmarSairDaBipagem(DESCARTE_BIPAGEM))) return false; aplicarCaixaEModo(r.caixaId, r.modo, null); return true; }   // conferência: bipa a caixa inteira
+    // reposição: marcar quais itens foram repostos (controle)
+    const sel=await escolherItensDaBipagem(r.caixaId,r.modo,[],{labelOk:'Começar',voltar:true});
     if(!sel || (sel.acao!=='ok' && sel.acao!=='voltar')) return false;
     if(sel.acao==='voltar'){ r=await showModal(html); continue; }
+    if(!(await confirmarSairDaBipagem(DESCARTE_BIPAGEM))) return false;
     aplicarCaixaEModo(r.caixaId, r.modo, new Set(sel.codigos));
     return true;
   }
@@ -2929,7 +2976,13 @@ document.addEventListener('click',(e)=>{
   if(modo){ closeModal({caixaId:document.getElementById('selCaixaPop').value, modo}); }
   else if(e.target.id==='popCancelar'){ closeModal(null); }
 });
-function switchTab(tab){
+let abaAtual='status';
+async function switchTab(tab){
+  if (abaAtual==='bipagem' && tab!=='bipagem'){
+    const pode=await confirmarSairDaBipagem({msg:'Ela continua aberta aqui, mas só entra no histórico depois de tocar em <b>Finalizar</b>.', sair:'Sair sem finalizar'});
+    if(!pode) return false;
+  }
+  abaAtual=tab;
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   document.querySelectorAll('main .view').forEach(v=>v.classList.toggle('active', v.id==='view-'+tab));
   if (tab==='bipagem'){
@@ -2941,6 +2994,7 @@ function switchTab(tab){
   }
   if (tab==='consultar') setTimeout(()=>document.getElementById('consultaInput').focus(), 50);
   if (tab==='lacres') prepararFormLacre();
+  return true;
 }
 function updateClock(){
   const now = new Date();
@@ -3004,16 +3058,19 @@ setTimeout(()=>corrigirLotesClassificadosErrado().catch(console.error), 2500);
   }
   fillUsuarioSelect();
   await garantirUsuarioSelecionado();
+  await oferecerRetomarRascunho();
 }
 
 document.querySelectorAll('nav.tabs button').forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.tab)));
 
-document.getElementById('caixaSelect').addEventListener('change', (e)=>{
+async function aoMudarCaixaSelect(e){
   const caixaAnterior = state.caixaId;
-  state.caixaId = e.target.value; state.session = {}; state.lastScan = null; state.pulados = new Set(); state.selecionados = null;
+  if (e.target.value!==caixaAnterior && !(await confirmarSairDaBipagem(DESCARTE_BIPAGEM))){ e.target.value = caixaAnterior; return; }
+  state.caixaId = e.target.value; state.session = {}; state.lastScan = null; state.pulados = new Set(); state.repostos = null;
   renderLastScan(); renderBipagemTable(); renderRepInfoPanel(); renderCadastroList(); renderOcupacaoBanner(); renderProximoItem();
   if (heartbeatInterval){ liberarEmUso(caixaAnterior); marcarEmUso(); }
-});
+}
+document.getElementById('caixaSelect').addEventListener('change', aoMudarCaixaSelect);
 document.getElementById('usuarioSelect').addEventListener('change', async (e)=>{
   if (e.target.value === '__novo__'){
     const dados = await promptNovoUsuarioRapido();
@@ -3026,16 +3083,18 @@ document.getElementById('usuarioSelect').addEventListener('change', async (e)=>{
 });
 
 document.getElementById('btnTrocarCaixaModo').addEventListener('click', ()=>abrirSeletorBipagem());
-document.getElementById('modoReposicao').addEventListener('click', ()=>{
-  state.modo='REPOSICAO'; state.session={}; state.lastScan=null; state.pulados = new Set(); state.selecionados=null;
+document.getElementById('modoReposicao').addEventListener('click', async ()=>{
+  if (!(await confirmarSairDaBipagem(DESCARTE_BIPAGEM))) return;
+  state.modo='REPOSICAO'; state.session={}; state.lastScan=null; state.pulados = new Set(); state.repostos=null;
   document.getElementById('modoReposicao').classList.add('active');
   document.getElementById('modoConferencia').classList.remove('active');
   renderLastScan(); renderBipagemTable(); renderRepInfoPanel(); renderProximoItem();
   document.getElementById('scanInput').focus();
   if (heartbeatInterval) marcarEmUso();
 });
-document.getElementById('modoConferencia').addEventListener('click', ()=>{
-  state.modo='CONFERENCIA'; state.session={}; state.lastScan=null; state.pulados = new Set(); state.selecionados=null;
+document.getElementById('modoConferencia').addEventListener('click', async ()=>{
+  if (!(await confirmarSairDaBipagem(DESCARTE_BIPAGEM))) return;
+  state.modo='CONFERENCIA'; state.session={}; state.lastScan=null; state.pulados = new Set(); state.repostos=null;
   document.getElementById('modoConferencia').classList.add('active');
   document.getElementById('modoReposicao').classList.remove('active');
   renderLastScan(); renderBipagemTable(); renderRepInfoPanel(); renderProximoItem();
@@ -3054,7 +3113,6 @@ async function entradaManual(){
   const codigo = await promptPickItem('(entrada manual)');
   if (!codigo) return;
   const item = findItemAnyCaixa(codigo);
-  if (!(await garantirItemNaSelecao(codigo, item?item.medicamento:codigo))) return;
   { const lim0 = verificarLimiteAntesDeAdicionar(codigo); if (!lim0.ok){ await avisoQuantidadeMaxima(lim0, item?item.medicamento:codigo); return; } }
   const entrada = await promptLoteValidade(item);
   if (!entrada) return;
@@ -3105,17 +3163,45 @@ document.getElementById('btnReiniciar').addEventListener('click', async ()=>{
   document.getElementById('scanInput').focus();
 });
 
-document.getElementById('btnFinalizar').addEventListener('click', async ()=>{
+async function tentarFinalizarBipagem(){
   const caixa = currentCaixa();
-  const pendentesLista = itensNaOrdemDeBipagem(caixa).filter(it => !itemFoiBipado(it));
-  if (pendentesLista.length>0){
-    const corpo = '<div class="muted">'+(state.selecionados?'Ainda faltam bipar:':'O ideal é bipar todos os itens da caixa. Ainda faltam:')+'</div>' +
-      '<ul style="margin:8px 0 0 18px; padding:0;">'+pendentesLista.map(p=>'<li>'+esc(p.medicamento)+'</li>').join('')+'</ul>';
-    const ok = await confirmarEstilizado('Faltam '+pendentesLista.length+' item(ns)', corpo, 'Finalizar mesmo assim', 'Voltar e bipar');
+  const naoBipados = itensNaOrdemDeBipagem(caixa).filter(it => !itemFoiBipado(it));
+  // Todos os itens da caixa precisam ser bipados (ou pulados de propósito, o que vira pendência).
+  const semAcao = naoBipados.filter(it=>!state.pulados.has(String(it.codigo)));
+  if (semAcao.length>0){
+    await confirmarEstilizado('É preciso bipar todos os itens da caixa',
+      '<div class="muted">Ainda faltam <b>'+semAcao.length+'</b> item(ns). Bipe-os (ou use "Pular este item" para deixar como pendência):</div><ul style="margin:8px 0 0 18px;padding:0;">'+semAcao.map(p=>'<li>'+esc(p.medicamento)+'</li>').join('')+'</ul>',
+      'Voltar e bipar','Fechar');
+    return;
+  }
+  if (naoBipados.length>0){
+    const ok = await confirmarEstilizado('Finalizar com pendências?',
+      '<div class="muted">Itens pulados, que ficarão como pendência:</div><ul style="margin:8px 0 0 18px;padding:0;">'+naoBipados.map(p=>'<li>'+esc(p.medicamento)+'</li>').join('')+'</ul>',
+      'Finalizar mesmo assim','Voltar e bipar');
     if (!ok) return;
   }
-  finalizarBipagem();
-});
+  if (state.modo==='REPOSICAO'){
+    // controle: precisa estar marcado quais itens foram repostos
+    if (!state.repostos || !state.repostos.size){
+      const sel=await escolherItensDaBipagem(state.caixaId,'REPOSICAO',[],{labelOk:'Finalizar',voltar:false});
+      if(!sel||sel.acao!=='ok') return;
+      state.repostos=new Set(sel.codigos);
+    }
+    // item não marcado, mas com lote diferente do cadastro: provavelmente foi reposto e ficou sem marcar
+    const suspeitos=caixa.itens.filter(it=>{
+      if(state.repostos.has(String(it.codigo))) return false;
+      const sc=state.session[String(it.codigo)]; if(!sc) return false;
+      return Object.values(sc.lotes).some(l=>!(it.lotes||[]).some(c=>(l.loteFornecedor&&canonLoteComparacao(c.loteFornecedor)===canonLoteComparacao(l.loteFornecedor))||(l.loteInstitucional&&canonLoteComparacao(c.loteInstitucional)===canonLoteComparacao(l.loteInstitucional))));
+    });
+    if (suspeitos.length){
+      const ok=await confirmarEstilizado('Itens com lote diferente do cadastro','<div class="muted">Estes itens não estão marcados como repostos, mas o lote bipado é diferente do cadastro:</div><ul style="margin:8px 0;padding-left:18px;">'+suspeitos.map(i=>'<li>'+esc(i.medicamento)+'</li>').join('')+'</ul><div class="muted">Marcar como repostos?</div>','Marcar como repostos','Voltar');
+      if(!ok) return;
+      suspeitos.forEach(i=>state.repostos.add(String(i.codigo)));
+    }
+  }
+  await finalizarBipagem();
+}
+document.getElementById('btnFinalizar').addEventListener('click', tentarFinalizarBipagem);
 
 document.getElementById('consultaInput').addEventListener('keydown', (e)=>{
   if (e.key==='Enter'){ e.preventDefault(); const val = e.target.value; e.target.value=''; consultar(val); }
