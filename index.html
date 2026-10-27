@@ -131,6 +131,9 @@ tr.row-pendente td{color:var(--muted);}
 .small-input{width:100%;}
 .flex{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
 .lac-lbl{display:block; margin-bottom:3px;}
+tr.clk{cursor:pointer;}
+tr.clk:hover td{background:var(--grey-bg);}
+.lnk-cx{color:var(--primary);font-weight:700;white-space:nowrap;}
 footer{padding:20px; text-align:center; font-size:13.2px; color:var(--muted);}
 a{color:var(--primary);}
 .itemcard{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; transition:background .3s, border-color .3s;}
@@ -186,7 +189,7 @@ a{color:var(--primary);}
       <h2 id="scanTitulo">Bipar item da reposição</h2>
       <div id="proximoItemPanel"></div>
       <div class="scan-box">
-        <input type="text" id="scanInput" placeholder="Clique aqui e bipe o código do medicamento…" autocomplete="off">
+        <input type="text" id="scanInput" placeholder="Bipe, ou digite: código lote(s) validade" autocomplete="off">
         <button class="btn secondary" id="btnManual">Adicionar manualmente</button>
       </div>
     </div>
@@ -245,7 +248,7 @@ a{color:var(--primary);}
       </div>
       <div class="table-wrap">
         <table id="alertaTable">
-          <thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Dias p/ vencer</th><th>Status</th><th>Caixa</th></tr></thead>
+          <thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Dias p/ vencer</th><th>Status</th><th>Qtd na caixa</th><th>Caixa</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -285,6 +288,7 @@ a{color:var(--primary);}
   </section>
 
   <section class="view" id="view-historico">
+    <div class="card" id="histDetalheCard" style="display:none;"></div>
     <div class="card">
       <h2>Histórico de reposições e conferências</h2>
       <div class="muted" id="historicoResumo" style="margin-bottom:8px;"></div>
@@ -292,17 +296,27 @@ a{color:var(--primary);}
         <select id="histTipoSelect"><option value="__all__">Reposição e conferência</option><option value="REPOSICAO">Só reposição</option><option value="CONFERENCIA">Só conferência</option></select>
         <select id="histCaixaSelect"><option value="__all__">Todas as caixas</option></select>
         <input type="text" id="histBusca" placeholder="Buscar medicamento…" style="min-width:200px;">
+      </div>
+      <div class="flex" style="margin-bottom:10px;align-items:center;">
+        <label class="muted">De</label><input type="date" id="histDe">
+        <label class="muted">Até</label><input type="date" id="histAte">
+        <button class="btn secondary btnPeriodoHist" data-per="hoje" style="padding:6px 12px;">Hoje</button>
+        <button class="btn secondary btnPeriodoHist" data-per="7" style="padding:6px 12px;">7 dias</button>
+        <button class="btn secondary btnPeriodoHist" data-per="30" style="padding:6px 12px;">30 dias</button>
+        <button class="btn secondary btnPeriodoHist" data-per="limpar" style="padding:6px 12px;">Limpar período</button>
+      </div>
+      <div class="flex" style="margin-bottom:10px;align-items:center;">
+        <button class="btn danger" id="btnExcluirHist" disabled>🗑️ Excluir selecionados (0)</button>
         <button class="btn secondary" id="btnExportarCsv" style="margin-left:auto;">⬇️ Exportar histórico (Excel/CSV)</button>
         <button class="btn secondary" id="btnExportarBackup">⬇️ Backup completo (JSON)</button>
       </div>
       <div class="table-wrap">
         <table id="historicoTable">
-          <thead><tr><th>ID</th><th>Tipo</th><th>Data</th><th>Hora</th><th>Caixa</th><th>Responsável</th><th>Itens</th><th>Divergências</th></tr></thead>
+          <thead><tr><th style="width:36px;"><input type="checkbox" id="chkHistTodos" title="Selecionar todos os registros filtrados" style="width:20px;height:20px;"></th><th>ID</th><th>Tipo</th><th>Data</th><th>Hora</th><th>Caixa</th><th>Responsável</th><th>Itens</th><th>Divergências</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
     </div>
-    <div class="card" id="histDetalheCard" style="display:none;"></div>
   </section>
 
   <section class="view" id="view-lacres">
@@ -355,27 +369,28 @@ a{color:var(--primary);}
   </section>
 
   <section class="view" id="view-mapeamento">
-    <div class="card">
+    <div class="modebar" id="mapSubnav" style="flex-wrap:wrap;">
+      <button class="modebtn active" data-mapaba="codigos">Códigos <span id="cntMapCodigos"></span></button>
+      <button class="modebtn" data-mapaba="lotes">Lotes e vínculos <span id="cntMapLotes"></span></button>
+      <button class="modebtn" data-mapaba="auditoria">Auditoria</button>
+    </div>
+    <div class="card" id="mapCard-codigos">
       <h2>Códigos mapeados</h2>
+      <div class="flex" style="margin-bottom:10px;"><input type="text" id="mapBuscaCodigos" placeholder="🔎 Buscar por código ou medicamento" style="flex:1;min-width:200px;"><span class="muted" id="mapResumoCodigos"></span></div>
       <div class="scan-box"><input type="text" id="mapeamentoScanInput" placeholder="Bipe aqui pra mapear (ou remapear) um código, sem precisar esperar a reposição/conferência…" autocomplete="off"></div>
       <div class="flex" style="margin-bottom:12px;"><input type="text" id="novoMapCodigo" placeholder="Código (GTIN ou 6 dígitos)" style="flex:1;min-width:160px;"><select id="novoMapMed" style="flex:2;min-width:200px;"></select><button class="btn" id="btnAddMap">Adicionar</button></div>
       <div class="table-wrap">
         <table id="mapaTable"><thead><tr><th>Código lido</th><th>Medicamento vinculado</th><th>Ações</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
-    <div class="card">
-      <h2>Vínculos de lote (fornecedor ↔ Einstein)</h2>
+    <div class="card" id="mapCard-lotes" style="display:none;">
+      <h2>Lotes e vínculos</h2>
+      <div class="flex" style="margin-bottom:10px;"><input type="text" id="mapBuscaLotes" placeholder="🔎 Buscar por medicamento ou lote" style="flex:1;min-width:200px;"><span class="muted" id="mapResumoLotes"></span></div>
       <div class="table-wrap">
-        <table id="vinculosTable"><thead><tr><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Ações</th></tr></thead><tbody></tbody></table>
+        <table id="lotesTable"><thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Vínculo</th><th>Ações</th></tr></thead><tbody></tbody></table>
       </div>
     </div>
-    <div class="card">
-      <h2>Lotes e validades mapeados</h2>
-      <div class="table-wrap">
-        <table id="lotesTable"><thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote Einstein</th><th>Validade</th><th>Ações</th></tr></thead><tbody></tbody></table>
-      </div>
-    </div>
-    <div class="card">
+    <div class="card" id="mapCard-auditoria" style="display:none;">
       <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
         <div><h2 style="margin-bottom:4px;">Auditoria de cadastros</h2></div>
         <button class="btn secondary" id="btnReanalisarCadastros">Reanalisar</button>
@@ -528,6 +543,40 @@ function findItemByCodigo(caixaId, codigo){
   const c = state.referencia[caixaId];
   if(!c) return null;
   return c.itens.find(it => String(it.codigo)===String(codigo)) || null;
+}
+// Entrada digitada na barra de bipar:  CÓDIGO  LOTE(S)  [VALIDADE]
+//   102099 50043658 1503759 03/06/2028      (código, lote fornecedor, lote Einstein, validade)
+//   102099 50043658                          (só um lote: o outro e a validade vêm do mapa, se já vinculado)
+//   102099 F:1503759 E:50043658              (F: = fornecedor, E: = Einstein, quando a classificação automática não serve)
+// Classificação automática: 7 dígitos (ou 000+7) = lote Einstein; qualquer outro = lote fornecedor.
+function parseEntradaManual(raw){
+  const t0=String(raw==null?'':raw).trim();
+  if(!t0 || /^\]/.test(t0)) return null;
+  let t=t0, validade=null;
+  const dataOk=(y,m,d)=>{ y=+y;m=+m;d=+d; const dt=new Date(y,m-1,d); return y>=2000&&y<=2100&&dt.getFullYear()===y&&dt.getMonth()===m-1&&dt.getDate()===d; };
+  t=t.replace(/(^|\s)(\d{4})-(\d{2})-(\d{2})(?=\s|$)/,(m,sp,y,mo,d)=>{ if(!validade&&dataOk(y,mo,d)){ validade=y+'-'+mo+'-'+d; return ' '; } return m; });
+  if(!validade) t=t.replace(/(^|\s)(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})(?=\s|$)/,(m,sp,d,mo,y)=>{ if(dataOk(y,mo,d)){ validade=y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); return ' '; } return m; });
+  const toks=t.split(/[\s,;]+/).filter(Boolean);
+  if(toks.length<2) return null;
+  if(toks.slice(1).some(x=>/^\d{1,4}[\/.-]\d{1,2}[\/.-]\d{1,4}$/.test(x))) return {erro:'Validade inválida. Use dia/mês/ano, por exemplo 03/06/2028.'};
+  const cod=toks[0];
+  if(!/^(\d{6}|\d{12,14})$/.test(cod)) return null;
+  const lotesTxt=toks.slice(1);
+  if(lotesTxt.length>2) return {erro:'Informe no máximo 2 lotes (fornecedor e Einstein).'};
+  let F=null, I=null;
+  const livres=[];
+  for(const tk of lotesTxt){
+    const mf=tk.match(/^(?:f|forn|fornecedor)[:=](.+)$/i), mi=tk.match(/^(?:e|i|inst|einstein|institucional)[:=](.+)$/i);
+    if(mf){ if(F) return {erro:'Lote fornecedor informado duas vezes.'}; F=mf[1]; }
+    else if(mi){ if(I) return {erro:'Lote Einstein informado duas vezes.'}; I=normalizarLoteInstitucionalLeitura(mi[1]); }
+    else livres.push(tk);
+  }
+  for(const tk of livres){
+    const ehI=/^(?:000)?\d{7}$/.test(tk);
+    if(ehI){ if(I) return {erro:'Não consegui separar os lotes: os dois parecem Einstein (7 dígitos). Use F: antes do lote fornecedor. Ex.: '+cod+' F:'+lotesTxt[0]+' '+lotesTxt[1]}; I=normalizarLoteInstitucionalLeitura(tk); }
+    else { if(F) return {erro:'Não consegui separar os lotes: os dois parecem fornecedor. Use E: antes do lote Einstein (7 dígitos). Ex.: '+cod+' '+lotesTxt[0]+' E:'+lotesTxt[1]}; F=tk; }
+  }
+  return {codigo:cod, F, I, validade};
 }
 function limparEntradaLeitor(raw){
   // Remove tabulações, quebras de linha e caracteres de controle nas EXTREMIDADES da leitura,
@@ -1100,6 +1149,7 @@ async function resolveScan(raw){
 
   // Primeiro tenta a parte GS1 da etiqueta completa: GTIN, validade e lote fornecedor (AI 10).
   const gs1=parseGS1(partes.blocoGS1);
+  const manual=(!temSinalGS1)?parseEntradaManual(raw):null;
   if(temSinalGS1 && gs1 && (gs1.gtin||gs1.lote||gs1.validade)){
     const productCodigo=await resolveCodigoProduto(gs1.gtin||partes.blocoGS1,gs1.gtin?' (código de barras / GTIN)':'');
     if(!productCodigo) return null;
@@ -1120,6 +1170,12 @@ async function resolveScan(raw){
     codigo=productCodigo;
     loteFornecedor=interno.loteFornecedor;
     loteInstitucional=extrairLoteInstitucionalEtiqueta(partes.textoCompleto,codigo)||interno.loteInstitucional;
+  }else if(manual){
+    if(manual.erro){ await confirmarEstilizado('Entrada digitada não reconhecida','<div class="muted">'+esc(manual.erro)+'</div>','Entendi','Fechar'); return null; }
+    const productCodigo=await resolveCodigoProduto(manual.codigo,' (digitado)');
+    if(!productCodigo) return null;
+    codigo=productCodigo;
+    loteFornecedor=manual.F; loteInstitucional=manual.I; validade=manual.validade;
   }else{
     const productCodigo=await resolveCodigoProduto(raw);
     if(!productCodigo) return null;
@@ -1935,7 +1991,7 @@ function renderAlertas(){
       (item.lotes||[]).forEach(l=>{
         if (!l.loteFornecedor && !l.loteInstitucional && !l.validade) return;
         const dias = diasParaVencer(l.validade);
-        rows.push({medicamento:item.medicamento, loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade, dias, caixa:c.nome});
+        rows.push({medicamento:item.medicamento, loteFornecedor:l.loteFornecedor, loteInstitucional:l.loteInstitucional, validade:l.validade, dias, caixa:c.nome, caixaId, codigo:item.codigo, qtd:loteMaxEfetivo(item,l)});
       });
     });
   });
@@ -1943,10 +1999,26 @@ function renderAlertas(){
   const tbody = document.querySelector('#alertaTable tbody');
   tbody.innerHTML = rows.map(r=>{
     const cd = classeDias(r.dias);
-    return '<tr><td>'+esc(r.medicamento)+'</td><td>'+esc(r.loteFornecedor||'—')+'</td><td>'+esc(r.loteInstitucional||'—')+'</td><td>'+fmtDateBR(r.validade)+'</td><td>'+(r.dias??'—')+'</td>' +
-      '<td><span class="badge '+cd.cls+'">'+cd.label+'</span></td><td>'+esc(r.caixa)+'</td></tr>';
-  }).join('') || '<tr><td colspan="7" class="muted">Nenhum lote cadastrado ainda.</td></tr>';
+    return '<tr class="clk" data-caixa="'+esc(r.caixaId)+'" data-codigo="'+esc(String(r.codigo))+'" title="Abrir esta caixa no cadastro"><td>'+esc(r.medicamento)+'</td><td>'+esc(r.loteFornecedor||'—')+'</td><td>'+esc(r.loteInstitucional||'—')+'</td><td>'+fmtDateBR(r.validade)+'</td><td>'+(r.dias??'—')+'</td>' +
+      '<td><span class="badge '+cd.cls+'">'+cd.label+'</span></td><td><b>'+esc(String(r.qtd))+'</b> un.</td><td><span class="lnk-cx">'+esc(r.caixa)+' ›</span></td></tr>';
+  }).join('') || '<tr><td colspan="8" class="muted">Nenhum lote cadastrado ainda.</td></tr>';
 }
+async function irParaCaixaNoCadastro(caixaId, codigo){
+  const sel=document.getElementById('caixaSelect');
+  if (caixaId!==state.caixaId){
+    sel.value=caixaId;
+    await aoMudarCaixaSelect({target:sel});          // se houver bipagem em andamento, pergunta antes de trocar
+    if (state.caixaId!==caixaId) return false;
+  }
+  await switchTab('cadastro');
+  const idx=(currentCaixa().itens||[]).findIndex(i=>String(i.codigo)===String(codigo));
+  if (idx>=0) setTimeout(()=>highlightCadastroItem(idx),150);
+  return true;
+}
+document.querySelector('#alertaTable tbody').addEventListener('click',(e)=>{
+  const tr=e.target.closest&&e.target.closest('tr.clk'); if(!tr) return;
+  irParaCaixaNoCadastro(tr.dataset.caixa, tr.dataset.codigo);
+});
 
 /* ---------------- Status das caixas ---------------- */
 const STATUS_COR = {em_uso:'grey', reposicao:'danger', conferencia:'orange', cobranca:'warn', pronta:'ok'};
@@ -2106,38 +2178,90 @@ function chipsRepostosHtml(h, compacto){
     return '<span class="badge ok" style="'+est+'" title="'+esc(nome)+'">'+esc(nomeCurtoMedicamento(nome))+(t?' · '+t:'')+'</span>';
   }).join('');
 }
-function renderHistorico(){
+const uiHist={sel:new Set()};
+function dataLocalISOHist(h){
+  // AAAA-MM-DD da data do registro (fuso local); cai para o texto dd/mm/aaaa se não houver data ISO
+  const d=h.criadoEm?new Date(h.criadoEm):null;
+  if(d&&!isNaN(d)) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const m=String(h.data||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  return m? m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0') : '';
+}
+function historicoFiltrado(){
   const selTipo = document.getElementById('histTipoSelect').value;
   const selCaixa = document.getElementById('histCaixaSelect').value;
   const busca = (document.getElementById('histBusca').value||'').toLowerCase();
-  const tbody = document.querySelector('#historicoTable tbody');
+  const de = (document.getElementById('histDe').value||'');
+  const ate = (document.getElementById('histAte').value||'');
   let list = state.historico;
   if (selTipo!=='__all__') list = list.filter(h=>h.tipo===selTipo);
   if (selCaixa!=='__all__') list = list.filter(h=>h.caixaId===selCaixa);
   if (busca) list = list.filter(h=> h.itens.some(it=>it.medicamento.toLowerCase().includes(busca)));
+  if (de) list = list.filter(h=>{ const d=dataLocalISOHist(h); return d && d>=de; });
+  if (ate) list = list.filter(h=>{ const d=dataLocalISOHist(h); return d && d<=ate; });
+  return list;
+}
+function atualizarSelecaoHist(list){
+  const ids=new Set(list.map(h=>h.confId));
+  uiHist.sel=new Set([...uiHist.sel].filter(id=>state.historico.some(h=>h.confId===id)));   // some quem foi apagado
+  const n=uiHist.sel.size;
+  const btn=document.getElementById('btnExcluirHist'); if(btn){ btn.textContent='🗑️ Excluir selecionados ('+n+')'; btn.disabled=n===0; }
+  const todos=document.getElementById('chkHistTodos');
+  if(todos){ const marcados=list.filter(h=>uiHist.sel.has(h.confId)).length; todos.checked=list.length>0&&marcados===list.length; todos.indeterminate=marcados>0&&marcados<list.length; }
+}
+function renderHistorico(){
+  const tbody = document.querySelector('#historicoTable tbody');
+  const list = historicoFiltrado();
   tbody.innerHTML = list.map(h=>{
     const divergentes = h.itens.filter(it=>it.resultado==='DIVERGÊNCIA').length;
     const tipoBadge = h.tipo==='REPOSICAO' ? '<span class="badge orange">📦 REPOSIÇÃO</span>' : '<span class="badge warn">🔎 CONFERÊNCIA</span>';
-    return '<tr class="histRow" data-id="'+h.confId+'" style="cursor:pointer;">' +
+    return '<tr class="histRow" data-id="'+esc(h.confId)+'" style="cursor:pointer;">' +
+      '<td><input type="checkbox" class="chkHist" data-id="'+esc(h.confId)+'"'+(uiHist.sel.has(h.confId)?' checked':'')+' style="width:20px;height:20px;"></td>' +
       '<td><b>'+histDisplayId(h)+'</b></td><td>'+tipoBadge+'</td><td>'+h.data+'</td><td>'+h.hora+'</td><td>'+esc(h.caixaNome)+'</td>' +
       '<td>'+esc(h.responsavelNome)+(h.responsavelMatricula?' ('+esc(h.responsavelMatricula)+')':'')+'</td>' +
       '<td><div><b>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+'</b> bipados</div>'+
         (chipsRepostosHtml(h,true) ? '<div style="margin-top:6px;"><div class="muted" style="font-size:12px;margin-bottom:3px;">📦 Repostos ('+h.itensRepostos.length+')</div><div style="display:flex;flex-wrap:wrap;gap:4px;">'+chipsRepostosHtml(h,true)+'</div></div>' : '')+'</td>' +
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
       '</tr>';
-  }).join('');
+  }).join('') || '<tr><td colspan="9" class="muted">Nenhum registro encontrado.</td></tr>';
   const resumoEl = document.getElementById('historicoResumo');
   if (resumoEl){
     const reps = list.filter(h=>h.tipo==='REPOSICAO').length;
     const confs = list.filter(h=>h.tipo==='CONFERENCIA').length;
     resumoEl.textContent = list.length+' registro(s) — '+reps+' reposição(ões) e '+confs+' conferência(s)';
   }
+  atualizarSelecaoHist(list);
+}
+function definirPeriodoHist(per){
+  const hoje=new Date(); const iso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const de=document.getElementById('histDe'), ate=document.getElementById('histAte');
+  if(per==='limpar'){ de.value=''; ate.value=''; }
+  else { const ini=new Date(hoje); if(per!=='hoje') ini.setDate(ini.getDate()-(Number(per)-1)); de.value=iso(ini); ate.value=iso(hoje); }
+  renderHistorico();
+}
+async function excluirHistoricos(ids){
+  const alvo=state.historico.filter(h=>ids.includes(h.confId));
+  if(!alvo.length) return false;
+  const lista=alvo.slice(0,6).map(h=>'<li><b>'+esc(histDisplayId(h))+'</b> — '+esc(h.caixaNome)+', '+esc(h.data)+' '+esc(h.hora)+'</li>').join('')+(alvo.length>6?'<li class="muted">… e mais '+(alvo.length-6)+'</li>':'');
+  const ok=await confirmarEstilizado('Excluir '+(alvo.length===1?'este registro':alvo.length+' registros')+' do histórico?','<div class="muted">Esta ação <b>não pode ser desfeita</b>. Se precisar guardar, faça antes o <b>Backup completo (JSON)</b>.</div><ul style="margin:8px 0 0 18px;padding:0;">'+lista+'</ul>','Excluir','Cancelar');
+  if(!ok) return false;
+  let falhas=0;
+  for(const h of alvo){
+    try{ if(dbApi) await dbApi.doc('historico/'+h.confId).delete(); }
+    catch(e){ console.error(e); falhas++; continue; }
+    state.historico=state.historico.filter(x=>x.confId!==h.confId);
+    uiHist.sel.delete(h.confId);
+  }
+  const card=document.getElementById('histDetalheCard');
+  if(card && !state.historico.some(h=>card.dataset&&card.dataset.id===h.confId)) { card.style.display='none'; }
+  renderHistorico(); renderRepInfoPanel();
+  mostrarToast(falhas? '⚠️ '+falhas+' registro(s) não puderam ser excluídos agora.' : '🗑️ '+(alvo.length===1?'Registro excluído.':alvo.length+' registros excluídos.'), falhas?'erro':undefined);
+  return falhas===0;
 }
 function renderHistDetalhe(confId){
   const h = state.historico.find(x=>x.confId===confId);
   const card = document.getElementById('histDetalheCard');
   if (!h){ card.style.display='none'; return; }
-  card.style.display='block';
+  card.style.display='block'; if(card.dataset) card.dataset.id=confId;
   let vinculo = '';
   if (h.tipo==='CONFERENCIA' && h.refReposicaoId){
     const rep = state.historico.find(x=>x.confId===h.refReposicaoId);
@@ -2146,7 +2270,7 @@ function renderHistDetalhe(confId){
   const repostosBloco = chipsRepostosHtml(h,false)
     ? '<div class="info-banner" style="margin-bottom:10px;"><div style="margin-bottom:8px;"><b>📦 Repostos nesta reposição: '+h.itensRepostos.length+'</b></div><div style="display:flex;flex-wrap:wrap;gap:6px;">'+chipsRepostosHtml(h,false)+'</div></div>' : '';
   const foiRep = (it)=>Array.isArray(h.itensRepostos) && h.itensRepostos.map(String).includes(String(it.codigo));
-  card.innerHTML = '<h2>'+histDisplayId(h)+' — '+esc(h.caixaNome)+'</h2>' +
+  card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;"><h2>'+histDisplayId(h)+' — '+esc(h.caixaNome)+'</h2><button class="btn secondary btnFecharDetalhe" style="padding:4px 12px;">✕ Fechar</button></div>' +
     '<div class="muted" style="margin-bottom:10px;">'+h.data+' às '+h.hora+' · responsável: <b>'+esc(h.responsavelNome)+'</b>'+(h.responsavelMatricula?' (matrícula '+esc(h.responsavelMatricula)+')':'')+'</div>' +
     vinculo + repostosBloco +
     '<div class="table-wrap"><table><thead><tr><th>Código</th><th>Medicamento</th><th>Qtd esperada</th><th>Qtd bipada</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Resultado</th><th>Ação</th></tr></thead><tbody>' +
@@ -2251,21 +2375,45 @@ function editandoNaTabela(tbody){
   const a=document.activeElement;
   return !!(a && a.tagName && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && tbody.contains(a));
 }
+const PAGINA_MAP=15;
+const uiMap={aba:'codigos', busca:{codigos:'',lotes:''}, limite:{codigos:PAGINA_MAP,lotes:PAGINA_MAP}};
+function nomeMedPorCodigo(c){ const it=findItemAnyCaixa(c); return it?it.medicamento:''; }
+function resumoMap(id, mostrando, total, filtrado){
+  const el=document.getElementById(id); if(el) el.textContent = total===0 ? '' : ('Mostrando '+mostrando+' de '+total+(filtrado?' (filtrado)':''));
+}
+function rodapeMaisMap(tabela, total, mostrando, colspan){
+  if (mostrando>=total) return '';
+  return '<tr><td colspan="'+colspan+'"><button class="btn secondary btnMaisMap" data-tabela="'+tabela+'">Mostrar mais ('+(total-mostrando)+' restantes)</button></td></tr>';
+}
+function atualizarContadoresMapeamento(){
+  const set=(id,n)=>{ const el=document.getElementById(id); if(el) el.textContent='('+n+')'; };
+  set('cntMapCodigos',Object.keys(state.mapeamentos).length);
+  set('cntMapLotes',linhasLotesUnificadas().length);
+}
+function aplicarAbaMapeamento(){
+  ['codigos','lotes','auditoria'].forEach(k=>{ const c=document.getElementById('mapCard-'+k); if(c) c.style.display = (k===uiMap.aba)?'':'none'; });
+  document.querySelectorAll('#mapSubnav button').forEach(b=>b.classList.toggle('active', b.dataset.mapaba===uiMap.aba));
+}
 function renderMapeamentoTable(){
   const tbody = document.querySelector('#mapaTable tbody');
   const novoSel = document.getElementById('novoMapMed');
   if (novoSel && !(document.activeElement===novoSel)) { const v=novoSel.value; novoSel.innerHTML=opcoesMedicamentosHtml(v); if(v) novoSel.value=v; }
-  if (editandoNaTabela(tbody)) { renderVinculosTable(); renderLotesConhecidosTable(); return; }   // não apaga o que a pessoa está digitando
-  const rows = Object.entries(state.mapeamentos);
+  if (editandoNaTabela(tbody)) { renderLotesConhecidosTable(); return; }   // não apaga o que a pessoa está digitando
+  const q = uiMap.busca.codigos;
+  const todos = Object.entries(state.mapeamentos)
+    .filter(([k,m])=>!q || (k+' '+m.codigo+' '+nomeMedPorCodigo(m.codigo)).toLowerCase().includes(q))
+    .sort((a,b)=>nomeMedPorCodigo(a[1].codigo).localeCompare(nomeMedPorCodigo(b[1].codigo)) || a[0].localeCompare(b[0]));
+  const rows = todos.slice(0, uiMap.limite.codigos);
   tbody.innerHTML = rows.map(([codigoLido, m])=>{
     return '<tr data-codigo="'+esc(codigoLido)+'">' +
       '<td><input class="edit-map-lido" type="text" value="'+esc(codigoLido)+'" style="width:100%;"></td>' +
       '<td><select class="edit-map-med" style="width:100%;">'+opcoesMedicamentosHtml(m.codigo)+'</select></td>' +
       '<td><div class="flex"><button class="btn btnSalvarMap" data-codigo="'+esc(codigoLido)+'" style="padding:6px 10px;">Salvar</button>' +
       '<button class="btn danger btnDelMap" data-codigo="'+esc(codigoLido)+'" style="padding:6px 10px;">✕</button></div></td></tr>';
-  }).join('') || '<tr><td colspan="3" class="muted">Nenhum código mapeado ainda.</td></tr>';
-  renderVinculosTable();
+  }).join('') + rodapeMaisMap('codigos', todos.length, rows.length, 3) || '<tr><td colspan="3" class="muted">'+(q?'Nenhum código encontrado.':'Nenhum código mapeado ainda.')+'</td></tr>';
+  resumoMap('mapResumoCodigos', rows.length, todos.length, !!q);
   renderLotesConhecidosTable();
+  atualizarContadoresMapeamento();
 }
 async function salvarMapeamentoEditado(antigo, novoLido, codigoMed){
   novoLido = limparEntradaLeitor(novoLido||'');
@@ -2286,18 +2434,21 @@ async function salvarMapeamentoEditado(antigo, novoLido, codigoMed){
   mostrarToast('✅ Código salvo.');
   return true;
 }
-function renderVinculosTable(){
-  const tbody = document.querySelector('#vinculosTable tbody');
-  if (!tbody) return;
-  if (editandoNaTabela(tbody)) return;   // não apaga o que a pessoa está digitando
-  const rows = Object.entries(state.mapaLotesGlobais).sort((a,b)=>String(a[1].loteFornecedor||'').localeCompare(String(b[1].loteFornecedor||'')));
-  tbody.innerHTML = rows.map(([key,m])=>
-    '<tr data-key="'+esc(key)+'">'+
-    '<td><input class="edit-vinc-f" type="text" value="'+esc(m.loteFornecedor||'')+'" style="width:100%;"></td>'+
-    '<td><input class="edit-vinc-i" type="text" value="'+esc(m.loteInstitucional||'')+'" style="width:100%;"></td>'+
-    '<td><input class="edit-vinc-val" type="date" value="'+norm(m.validade)+'"></td>'+
-    '<td><div class="flex"><button class="btn btnSalvarVinculo" data-key="'+esc(key)+'" style="padding:6px 10px;">Salvar</button><button class="btn danger btnDelVinculo" data-key="'+esc(key)+'" style="padding:6px 10px;">✕</button></div></td></tr>'
-  ).join('') || '<tr><td colspan="4" class="muted">Nenhum vínculo salvo ainda.</td></tr>';
+function renderVinculosTable(){ renderLotesConhecidosTable(); }   // os vínculos agora aparecem na lista única de lotes
+function linhasLotesUnificadas(){
+  // Uma linha por lote conhecido (por medicamento) + os vínculos globais que não têm lote conhecido correspondente.
+  const rows=[], pares=new Set();
+  Object.entries(state.lotesConhecidos).forEach(([key,l])=>{
+    const nl=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+    const vinc=(nl.loteFornecedor&&nl.loteInstitucional)?vinculoGlobalExato(nl.loteFornecedor,nl.loteInstitucional):null;
+    if(vinc) pares.add(canonLoteComparacao(nl.loteFornecedor)+'|'+canonLoteComparacao(nl.loteInstitucional));
+    rows.push({tipo:'lote',key,l,nl,vinc,quando:l.atualizadoEm||''});
+  });
+  Object.entries(state.mapaLotesGlobais).forEach(([key,m])=>{
+    if(pares.has(canonLoteComparacao(m.loteFornecedor)+'|'+canonLoteComparacao(m.loteInstitucional))) return;
+    rows.push({tipo:'vinculo',key,m,vinc:m,quando:m.atualizadoEm||''});
+  });
+  return rows;
 }
 async function salvarVinculoEditado(keyAntigo, fDig, iDig, validade){
   const old = state.mapaLotesGlobais[keyAntigo];
@@ -2355,17 +2506,34 @@ function renderLotesConhecidosTable(){
   const tbody = document.querySelector('#lotesTable tbody');
   if (!tbody) return;
   if (editandoNaTabela(tbody)) return;   // não apaga o que a pessoa está digitando
-  const rows = Object.entries(state.lotesConhecidos);
-  tbody.innerHTML = rows.map(([key, l])=>{
-    const it = findItemAnyCaixa(l.codigo);
-    const nl=normalizarCamposLote(l.loteFornecedor,l.loteInstitucional);
+  const q = uiMap.busca.lotes;
+  const todos = linhasLotesUnificadas()
+    .filter(r=>{ if(!q) return true; const F=r.tipo==='lote'?r.nl.loteFornecedor:r.m.loteFornecedor, I=r.tipo==='lote'?r.nl.loteInstitucional:r.m.loteInstitucional; return ((r.tipo==='lote'?nomeMedPorCodigo(r.l.codigo):'vínculo global')+' '+(F||'')+' '+(I||'')).toLowerCase().includes(q); })
+    .sort((a,b)=>String(b.quando).localeCompare(String(a.quando)));   // mais recentes primeiro
+  const rows = todos.slice(0, uiMap.limite.lotes);
+  const badge=(vinc)=>vinc?'<span class="badge ok">🔗 vinculado</span>':'<span class="muted">—</span>';
+  tbody.innerHTML = rows.map(r=>{
+    if(r.tipo==='vinculo'){
+      const key=r.key, m=r.m;
+      return '<tr data-key="'+esc(key)+'">'+
+        '<td><span class="muted">Vínculo global (sem medicamento)</span></td>'+
+        '<td><input class="edit-vinc-f" type="text" value="'+esc(m.loteFornecedor||'')+'" style="width:100%;"></td>'+
+        '<td><input class="edit-vinc-i" type="text" value="'+esc(m.loteInstitucional||'')+'" style="width:100%;"></td>'+
+        '<td><input class="edit-vinc-val" type="date" value="'+norm(m.validade)+'"></td>'+
+        '<td>'+badge(true)+'</td>'+
+        '<td><div class="flex"><button class="btn btnSalvarVinculo" data-key="'+esc(key)+'" style="padding:6px 10px;">Salvar</button><button class="btn danger btnDelVinculo" data-key="'+esc(key)+'" style="padding:6px 10px;">✕</button></div></td></tr>';
+    }
+    const key=r.key, l=r.l, nl=r.nl;
     return '<tr data-lotekey="'+esc(key)+'">'+
       '<td><select class="edit-codigo" style="width:100%;">'+opcoesMedicamentosHtml(l.codigo)+'</select></td>'+
       '<td><input class="edit-loteF" type="text" value="'+esc(nl.loteFornecedor||'')+'" placeholder="Fornecedor"></td>'+
       '<td><input class="edit-loteI" type="text" value="'+esc(nl.loteInstitucional||'')+'" placeholder="Einstein"></td>'+
       '<td><input class="edit-validade" type="date" value="'+norm(l.validade)+'"></td>'+
+      '<td>'+badge(r.vinc)+'</td>'+
       '<td><div class="flex"><button class="btn btnSalvarLoteConhecido" data-key="'+esc(key)+'" style="padding:6px 10px;">Salvar</button><button class="btn danger btnDelLoteConhecido" data-key="'+esc(key)+'" style="padding:6px 10px;">✕</button></div></td></tr>';
-  }).join('') || '<tr><td colspan="5" class="muted">Nenhum lote aprendido ainda.</td></tr>';
+  }).join('') + rodapeMaisMap('lotes', todos.length, rows.length, 6) || '<tr><td colspan="6" class="muted">'+(q?'Nenhum lote encontrado.':'Nenhum lote ainda.')+'</td></tr>';
+  resumoMap('mapResumoLotes', rows.length, todos.length, !!q);
+  atualizarContadoresMapeamento();
 }
 
 function nomeCanonicoPorCodigo(codigo){
@@ -3254,9 +3422,21 @@ document.getElementById('alertaCaixaSelect').addEventListener('change', renderAl
 document.getElementById('histTipoSelect').addEventListener('change', renderHistorico);
 document.getElementById('histCaixaSelect').addEventListener('change', renderHistorico);
 document.getElementById('histBusca').addEventListener('input', debounce(renderHistorico, 200));
+document.getElementById('histDe').addEventListener('change', renderHistorico);
+document.getElementById('histAte').addEventListener('change', renderHistorico);
+document.querySelectorAll('.btnPeriodoHist').forEach(b=>b.addEventListener('click',()=>definirPeriodoHist(b.dataset.per)));
+document.getElementById('chkHistTodos').addEventListener('change',(e)=>{
+  const list=historicoFiltrado();
+  if(e.target.checked) list.forEach(h=>uiHist.sel.add(h.confId)); else list.forEach(h=>uiHist.sel.delete(h.confId));
+  renderHistorico();
+});
+document.getElementById('btnExcluirHist').addEventListener('click',()=>excluirHistoricos([...uiHist.sel]));
+document.getElementById('histDetalheCard').addEventListener('click',(e)=>{ if(e.target.closest('.btnFecharDetalhe')) document.getElementById('histDetalheCard').style.display='none'; });
 document.querySelector('#historicoTable tbody').addEventListener('click', (e)=>{
+  const chk = e.target.closest('.chkHist');
+  if (chk){ if(chk.checked) uiHist.sel.add(chk.dataset.id); else uiHist.sel.delete(chk.dataset.id); atualizarSelecaoHist(historicoFiltrado()); return; }
   const row = e.target.closest('.histRow');
-  if (row) renderHistDetalhe(row.dataset.id);
+  if (row){ renderHistDetalhe(row.dataset.id); const c=document.getElementById('histDetalheCard'); if(c.scrollIntoView) c.scrollIntoView({behavior:'smooth',block:'start'}); }   // o detalhe fica no topo da aba
 });
 
 document.getElementById('btnAddUsuario').addEventListener('click', async ()=>{
@@ -3297,7 +3477,7 @@ document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>
     await editarMapeamento(codigo);
   }
 });
-document.querySelector('#vinculosTable tbody').addEventListener('click', async (e)=>{
+async function aoClicarVinculo(e){
   const btnSave = e.target.closest('.btnSalvarVinculo');
   const btnDel = e.target.closest('.btnDelVinculo');
   if (btnSave){
@@ -3311,6 +3491,15 @@ document.querySelector('#vinculosTable tbody').addEventListener('click', async (
     renderVinculosTable();
     if (dbApi){ try{ await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(key)).delete(); mostrarToast('Vínculo removido.'); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
   }
+}
+document.querySelector('#lotesTable tbody').addEventListener('click', aoClicarVinculo);
+document.querySelectorAll('#mapSubnav button').forEach(b=>b.addEventListener('click',()=>{ uiMap.aba=b.dataset.mapaba; aplicarAbaMapeamento(); }));
+[['mapBuscaCodigos','codigos'],['mapBuscaLotes','lotes']].forEach(([id,k])=>{
+  document.getElementById(id).addEventListener('input',(e)=>{ uiMap.busca[k]=String(e.target.value||'').toLowerCase().trim(); uiMap.limite[k]=PAGINA_MAP; renderMapeamentoTable(); });
+});
+document.addEventListener('click',(e)=>{
+  const b=e.target.closest&&e.target.closest('.btnMaisMap'); if(!b) return;
+  uiMap.limite[b.dataset.tabela]+=PAGINA_MAP; renderMapeamentoTable();
 });
 document.getElementById('btnAddMap').addEventListener('click', async ()=>{
   const inp = document.getElementById('novoMapCodigo');
@@ -3344,7 +3533,14 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
         if(novoKey!==oldKey) await dbApi.doc('lotesConhecidos/'+encodeURIComponent(oldKey)).delete();
       }
       renderLotesConhecidosTable();
-      if(loteFornecedor&&loteInstitucional) await garantirVinculoGlobalConfirmado(codigoNovo,loteFornecedor,loteInstitucional,validade,'Você informou os dois lotes juntos nesta linha.');
+      const oldN=normalizarCamposLote(old.loteFornecedor,old.loteInstitucional);
+      const vincAnt=(oldN.loteFornecedor&&oldN.loteInstitucional)?vinculoGlobalExato(oldN.loteFornecedor,oldN.loteInstitucional):null;
+      const mudou=vincAnt&&(canonLoteComparacao(loteFornecedor)!==canonLoteComparacao(oldN.loteFornecedor)||canonLoteComparacao(loteInstitucional)!==canonLoteComparacao(oldN.loteInstitucional)||(validade||null)!==(vincAnt.validade||null));
+      if(mudou){
+        // a linha já tinha vínculo: corrige o vínculo junto (com confirmação), em vez de deixar o antigo para trás
+        const kAnt=Object.keys(state.mapaLotesGlobais).find(k=>state.mapaLotesGlobais[k]===vincAnt);
+        if(kAnt) await salvarVinculoEditado(kAnt,loteFornecedor,loteInstitucional,validade);
+      } else if(loteFornecedor&&loteInstitucional) await garantirVinculoGlobalConfirmado(codigoNovo,loteFornecedor,loteInstitucional,validade,'Você informou os dois lotes juntos nesta linha.');
       await propagarComplementoLote(codigoNovo,loteFornecedor,loteInstitucional,validade);
       mostrarToast('✅ Lote e validade atualizados.');
     }catch(err){ console.error(err); mostrarToast('⚠️ Não foi possível sincronizar a alteração.', 'erro'); }
