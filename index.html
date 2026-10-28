@@ -2706,11 +2706,25 @@ function fillCaixaSelects(){
 }
 
 /* ---------------- Contagem geral (todas as caixas) ---------------- */
+// A folha impressa/baixada não leva a coluna "Distribuição" (as tabelas da tela continuam completas).
+function indiceColunaDistribuicao(t){
+  if(!t||!t.querySelectorAll) return -1;
+  return [...t.querySelectorAll('thead th')].findIndex(th=>/distribui/i.test(String(th.textContent||'')));
+}
+function tabelaParaFolha(id){
+  const t=document.getElementById(id);
+  if(!t) return '';
+  if(!t.cloneNode) return t.outerHTML||'';
+  const c=t.cloneNode(true);
+  const idx=indiceColunaDistribuicao(c);
+  if(idx>=0) c.querySelectorAll('tr').forEach(tr=>{ const cel=tr.children&&tr.children[idx]; if(cel) tr.removeChild(cel); });
+  return c.outerHTML||'';
+}
 function htmlFolhaContagem(){
   const agora=new Date();
   const busca=String((document.getElementById('contagemBusca')||{}).value||'').trim();
   const u=usuarioAtual();
-  const tab=(id)=>{ const t=document.getElementById(id); return t&&t.outerHTML?t.outerHTML:''; };
+  const tab=(id)=>tabelaParaFolha(id);
   return '<h1>Contagem de estoque — Caixas de Anestesia — Radioterapia</h1>'+
     '<div class="pr-meta">Emitido em '+fmtDateBR(agora.toISOString().slice(0,10))+' às '+fmtTimeBR(agora)+(u?' por '+esc(u.nome)+(u.matricula?' ('+esc(u.matricula)+')':''):'')+' · '+CAIXAS.length+' caixas'+(busca?' · Filtro: “'+esc(busca)+'”':'')+'</div>'+
     '<h2>1. Contagem geral</h2>'+tab('contagemTable')+
@@ -2740,7 +2754,8 @@ function chamarImpressaoContagem(){
 function linhasCsvDaTabela(id){
   const t=document.getElementById(id);
   if(!t||!t.querySelectorAll) return [];
-  return [...t.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('th,td')].map(c=>csvEscape(String(c.textContent||'').replace(/\s+/g,' ').trim())).join(';')).filter(l=>l.replace(/[;"]/g,'').length>0);
+  const idx=indiceColunaDistribuicao(t);
+  return [...t.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('th,td')].filter((c,i)=>i!==idx).map(c=>csvEscape(String(c.textContent||'').replace(/\s+/g,' ').trim())).join(';')).filter(l=>l.replace(/[;"]/g,'').length>0);
 }
 function baixarCsvContagem(){
   const agora=new Date(), u=usuarioAtual();
