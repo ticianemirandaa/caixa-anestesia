@@ -13,6 +13,10 @@
   --danger:#c22; --danger-bg:#fdeaea;
   --orange:#c46a1a; --orange-bg:#fdf0e2;
   --rep:#1565c0; --rep-bg:#e3f0fd; --conf:#7b3fb8; --conf-bg:#f1e8fa;
+  --val-red:#c62828; --val-red-bg:#fde3e3; --val-red-solid:#c62828; --val-red-tx:#ffffff;
+  --val-orange:#b85c00; --val-orange-bg:#ffe9cc; --val-orange-solid:#ff8f00; --val-orange-tx:#1f1000;
+  --val-yellow:#7a6a00; --val-yellow-bg:#fff9c4; --val-yellow-solid:#ffe600; --val-yellow-tx:#2b2600;
+  --val-green:#1b6e2d; --val-green-bg:#dff3e3; --val-green-solid:#2e7d32; --val-green-tx:#ffffff;
   --grey-bg:#eef0f2;
   --shadow: 0 1px 3px rgba(20,30,40,.08), 0 1px 2px rgba(20,30,40,.06);
 }
@@ -25,6 +29,10 @@
     --danger:#ef6b6b; --danger-bg:#3a1414;
     --orange:#e5924c; --orange-bg:#3a2410;
     --rep:#5aa9ff; --rep-bg:#112a45; --conf:#c29bf5; --conf-bg:#2b1a42;
+    --val-red:#ff8a80; --val-red-bg:#3d1717; --val-red-solid:#d32f2f; --val-red-tx:#ffffff;
+    --val-orange:#ffb74d; --val-orange-bg:#3b2606; --val-orange-solid:#fb8c00; --val-orange-tx:#1a0d00;
+    --val-yellow:#fff176; --val-yellow-bg:#38330a; --val-yellow-solid:#fdd835; --val-yellow-tx:#241c00;
+    --val-green:#81c784; --val-green-bg:#13301a; --val-green-solid:#66bb6a; --val-green-tx:#0b2a10;
     --grey-bg:#232c31;
     --shadow: 0 1px 3px rgba(0,0,0,.5);
   }
@@ -37,6 +45,10 @@
   --danger:#ef6b6b; --danger-bg:#3a1414;
   --orange:#e5924c; --orange-bg:#3a2410;
   --rep:#5aa9ff; --rep-bg:#112a45; --conf:#c29bf5; --conf-bg:#2b1a42;
+  --val-red:#ff8a80; --val-red-bg:#3d1717; --val-red-solid:#d32f2f; --val-red-tx:#ffffff;
+  --val-orange:#ffb74d; --val-orange-bg:#3b2606; --val-orange-solid:#fb8c00; --val-orange-tx:#1a0d00;
+  --val-yellow:#fff176; --val-yellow-bg:#38330a; --val-yellow-solid:#fdd835; --val-yellow-tx:#241c00;
+  --val-green:#81c784; --val-green-bg:#13301a; --val-green-solid:#66bb6a; --val-green-tx:#0b2a10;
   --grey-bg:#232c31;
   --shadow: 0 1px 3px rgba(0,0,0,.5);
 }
@@ -185,6 +197,17 @@ tr.histRow.conf td:first-child{box-shadow:inset 5px 0 0 var(--conf);}
   #printArea .pr-ass div{border-top:1px solid #000; padding-top:3px; min-width:170px;}
   #printArea .badge{border:1px solid #444; background:#fff !important; color:#000 !important; padding:0 4px; font-size:10px;}
 }
+/* selos e avisos de validade: vermelho / laranja / amarelo / verde (cores sólidas, bem distintas) */
+.badge.val-red{background:var(--val-red-solid); color:var(--val-red-tx);}
+.badge.val-orange{background:var(--val-orange-solid); color:var(--val-orange-tx);}
+.badge.val-yellow{background:var(--val-yellow-solid); color:var(--val-yellow-tx);}
+.badge.val-green{background:var(--val-green-solid); color:var(--val-green-tx);}
+.aviso.val-red{border-left-color:var(--val-red-solid);}
+.aviso.val-orange{border-left-color:var(--val-orange-solid);}
+.aviso.val-yellow{border-left-color:var(--val-yellow-solid);}
+.aviso.val-green{border-left-color:var(--val-green-solid);}
+.legenda-val{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px;}
+.badge.qtd-lote{background:var(--grey-bg); color:inherit; padding:1px 9px; font-size:13px;}
 /* avisos compactos no topo de todas as telas */
 .aviso{margin-bottom:10px; border:1px solid var(--border); border-left:5px solid var(--grey-bg); border-radius:10px; background:var(--panel); overflow:hidden;}
 .aviso.danger{border-left-color:var(--danger);}
@@ -274,7 +297,7 @@ a{color:var(--primary);}
         <table id="bipagemTable">
           <thead><tr>
             <th>Código</th><th>Medicamento</th><th>Qtd. esperada</th><th id="thRepostoQtd" style="display:none;">Bipada na reposição</th><th>Qtd. bipada</th>
-            <th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Resultado</th><th>Ação</th><th></th>
+            <th>Lote(s) fornecedor</th><th>Lote(s) institucional</th><th>Validade(s)</th><th>Qtd por lote</th><th>Resultado</th><th>Ação</th><th></th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -314,9 +337,9 @@ a{color:var(--primary);}
       <div class="flex" style="margin-bottom:10px;">
         <label class="muted">Caixa:</label>
         <select id="alertaCaixaSelect"><option value="__all__">Todas as caixas</option></select>
-        <span class="pill">🔴 até 30 dias</span><span class="pill">🟠 até 60 dias</span><span class="pill">🟡 até 90 dias</span><span class="pill">🟢 acima de 90 dias</span>
       </div>
-      <div class="table-wrap">
+      <div class="legenda-val"><span class="badge val-red">🔴 vencido / até 30 dias</span><span class="badge val-orange">🟠 31–60 dias</span><span class="badge val-yellow">🟡 61–90 dias</span><span class="badge val-green">🟢 mais de 90 dias</span></div>
+        <div class="table-wrap">
         <table id="alertaTable">
           <thead><tr><th>Medicamento</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Dias p/ vencer</th><th>Status</th><th>Qtd na caixa</th><th>Caixa</th></tr></thead>
           <tbody></tbody>
@@ -366,6 +389,7 @@ a{color:var(--primary);}
         <select id="histTipoSelect"><option value="__all__">Reposição e conferência</option><option value="REPOSICAO">Só reposição</option><option value="CONFERENCIA">Só conferência</option></select>
         <select id="histCaixaSelect"><option value="__all__">Todas as caixas</option></select>
         <input type="text" id="histBusca" placeholder="Buscar medicamento…" style="min-width:200px;">
+        <button class="btn secondary" id="btnOrdemHist" title="Inverter a ordem por horário">⬇️ Mais recentes primeiro</button>
       </div>
       <div class="flex" style="margin-bottom:10px;align-items:center;">
         <label class="muted">De</label><input type="date" id="histDe">
@@ -536,6 +560,8 @@ const state = {
   historico: [],
   lacres: [],
   qtdRepostos: {},   // {codigo: unidades repostas} — só para itens marcados em repostos
+  inicioBipagem: null,   // quando a bipagem em andamento começou (a data do histórico é a da bipagem, não a da finalização)
+  decisaoDivergencia: {},   // conferência: {codigo:'atualizar'|'manter'} escolhido ao ver a divergência
   repostos: null,   // Set de códigos marcados como repostos nesta reposição (só controle; a bipagem cobra TODOS os itens)
   session: {},
   lastScan: null,
@@ -544,6 +570,11 @@ const state = {
 
 let dbApi = null;
 
+function dataLocalISO(d){
+  // AAAA-MM-DD no fuso do aparelho (toISOString() devolve a data em UTC, que à noite já é o dia seguinte no Brasil)
+  d = (d instanceof Date) ? d : new Date(d);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function norm(v){ return v===undefined||v===null ? '' : String(v).slice(0,10); }
 function esc(v){ return (v===undefined||v===null?'':String(v)).replace(/"/g,'&quot;'); }
 function fmtDateBR(d){
@@ -586,11 +617,11 @@ function diasParaVencer(validadeISO){
 }
 function classeDias(dias){
   if (dias===null) return {cls:'grey', label:'—'};
-  if (dias<0) return {cls:'danger', label:'VENCIDO'};
-  if (dias<=30) return {cls:'danger', label:'CRÍTICO'};
-  if (dias<=60) return {cls:'orange', label:'ATENÇÃO'};
-  if (dias<=90) return {cls:'warn', label:'PRÓXIMO'};
-  return {cls:'ok', label:'NORMAL'};
+  if (dias<0) return {cls:'val-red', label:'🔴 VENCIDO'};
+  if (dias<=30) return {cls:'val-red', label:'🔴 CRÍTICO'};
+  if (dias<=60) return {cls:'val-orange', label:'🟠 ATENÇÃO'};
+  if (dias<=90) return {cls:'val-yellow', label:'🟡 PRÓXIMO'};
+  return {cls:'val-green', label:'🟢 NORMAL'};
 }
 function loteKey(lF, lI){ if(!lF && !lI) return '(sem lote)'; return (lF||'—')+'|'+(lI||'—'); }
 function currentCaixa(){ return state.referencia[state.caixaId] || {nome:'', itens:[]}; }
@@ -1309,6 +1340,7 @@ async function resolveScan(raw){
 }
 
 function addScan(res){
+  if (Object.keys(state.session).length===0){ state.inicioBipagem = new Date().toISOString(); state.decisaoDivergencia = {}; }   // primeira bipagem de uma sessão nova
   state.lastScan = res;
   const key = String(res.codigo);
   if (!state.session[key]) state.session[key] = {qtd:0, lotes:{}};
@@ -1400,7 +1432,8 @@ function linhaComparacao(rotulo, bipado, esperado, diferente){
     '<div><span class="muted">Deveria estar</span><br><b>'+esc(valorVisivel(esperado))+'</b></div>' +
   '</div>';
 }
-async function avisoDivergenciaPopup(medicamento, status){
+async function avisoDivergenciaPopup(medicamento, status, opts){
+  const decidir = !!(opts && opts.decidir);
   const d=status.detalhes||{};
   const comparacao = d.bipado ?
     '<div style="border:1px solid var(--border);border-radius:8px;padding:0 10px;margin-bottom:12px;">' +
@@ -1417,9 +1450,14 @@ async function avisoDivergenciaPopup(medicamento, status){
     comparacao +
     '<div class="muted" style="margin-bottom:12px;">'+(status.explicacao||EXPLICACOES_DIVERGENCIA[status.tipo]||'')+'</div>' +
     '<div style="background:var(--danger-bg); color:var(--danger); border-radius:8px; padding:10px 12px; font-weight:700; margin-bottom:14px;">Ação sugerida: '+esc(status.acao)+'</div>' +
-    '<div class="actions" style="justify-content:center;"><button class="btn" id="divergenciaOk">Entendi</button></div>';
-  await showModal(html);
+    (decidir
+      ? '<div style="font-weight:700; margin-bottom:6px; text-align:center;">Deseja atualizar o cadastro desta caixa com o lote que foi bipado?</div>' +
+        '<div class="muted" style="margin-bottom:12px; text-align:center;">A divergência fica registrada no histórico de qualquer forma.</div>' +
+        '<div class="actions" style="justify-content:center;"><button class="btn" id="divAtualizar">Atualizar cadastro</button><button class="btn secondary" id="divManter">Manter cadastro</button></div>'
+      : '<div class="actions" style="justify-content:center;"><button class="btn" id="divergenciaOk">Entendi</button></div>');
+  return await showModal(html);
 }
+document.addEventListener('click', (e)=>{ if (e.target.id==='divAtualizar') closeModal('atualizar'); else if (e.target.id==='divManter') closeModal('manter'); });
 document.addEventListener('click', (e)=>{ if (e.target.id === 'divergenciaOk') closeModal(true); });
 
 // Limite rígido: nunca soma uma unidade acima da quantidade máxima do medicamento nesta caixa.
@@ -1456,7 +1494,8 @@ async function bipar(raw){
   if (item){
     const status = computeStatus(item, state.session[String(item.codigo)]);
     if (status.resultado==='DIVERGÊNCIA'){
-      await avisoDivergenciaPopup(res.medicamento, status);
+      const dec = await avisoDivergenciaPopup(res.medicamento, status, {decidir: state.modo==='CONFERENCIA'});
+      if (state.modo==='CONFERENCIA' && dec) state.decisaoDivergencia[String(item.codigo)] = dec;
     }
   }
 }
@@ -1689,6 +1728,17 @@ function aplicarCorModo(){
   if(f){ f.className='faixa-modo '+(rep?'rep':'conf'); f.innerHTML=(rep?'📦 REPOSIÇÃO':'🔎 CONFERÊNCIA')+' · '+esc((currentCaixa()||{}).nome||''); }
 }
 function tipoBadgeHtml(tipo){ return tipo==='REPOSICAO' ? '<span class="badge rep">📦 REPOSIÇÃO</span>' : '<span class="badge conf">🔎 CONFERÊNCIA</span>'; }
+function lotesColunasHtml(lotes){
+  const L=lotes||[];
+  if(!L.length) return {f:'—',i:'—',v:'—',q:'—'};
+  const ln=(t)=>'<div style="white-space:nowrap;">'+t+'</div>';
+  return {
+    f:L.map(l=>ln(esc(l.loteFornecedor||'—'))).join(''),
+    i:L.map(l=>ln(esc(l.loteInstitucional||'—'))).join(''),
+    v:L.map(l=>ln(l.validade?fmtDateBR(l.validade):'—')).join(''),
+    q:L.map(l=>ln('<span class="badge qtd-lote">'+(Number(l.qtd)||0)+' un.</span>')).join('')
+  };
+}
 function renderBipagemTable(){
   document.getElementById('bipagemCaixaTitulo').textContent = 'Itens da caixa — ' + currentCaixa().nome;
   document.getElementById('scanTitulo').textContent = state.modo==='REPOSICAO' ? 'Bipar item da reposição' : 'Bipar item da conferência';
@@ -1721,9 +1771,8 @@ function renderBipagemTable(){
       st = {...st, resultado:'PULADO', tipo:'pendência', acao:'BIPAR ASSIM QUE POSSÍVEL', cls:'row-qtd'};
     }
     if (st.resultado==='PREENCHER' || st.resultado==='PULADO' || st.resultado==='EM ANDAMENTO') pendentes++; else if (st.resultado==='CONFORME') conformes++; else divergentes++;
-    const lF = scan ? Object.values(scan.lotes).map(l=>esc(l.loteFornecedor||'—')+' ('+l.qtd+')').join('<br>') : '—';
-    const lI = scan ? Object.values(scan.lotes).map(l=>esc(l.loteInstitucional||'—')+' ('+l.qtd+')').join('<br>') : '—';
-    const val = scan ? Object.values(scan.lotes).map(l=>l.validade?fmtDateBR(l.validade):'—').join('<br>') : '—';
+    const colL = lotesColunasHtml(scan?Object.values(scan.lotes):[]);
+    const lF = colL.f, lI = colL.i, val = colL.v, lq = colL.q;
     const temAlgoParaApagar = !!scan || state.pulados.has(String(item.codigo));
     const btnCompletar = (lotesIncompletosDaSessao(item.codigo).length)
       ? '<button class="btn secondary btnCompletarLote" data-codigo="'+esc(item.codigo)+'" style="padding:4px 8px;margin-right:6px;" title="Informar o lote que faltou">+ lote faltante</button>'
@@ -1737,7 +1786,7 @@ function renderBipagemTable(){
       '<td>'+item.qtde+'</td>' +
       (emConferencia ? '<td>'+qtdRepostaTexto(repUltima,item)+'</td>' : '') +
       '<td>'+st.qtdBipada+'</td>' +
-      '<td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
+      '<td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td><td>'+lq+'</td>' +
       '<td><b>'+st.resultado+'</b>'+(st.tipo&&st.tipo!=='—'?' — '+st.tipo:'')+'</td>' +
       '<td>'+st.acao+'</td>' +
       '<td>'+btnCompletar+btnApagar+'</td>' +
@@ -2148,10 +2197,10 @@ function renderValidadeBanner(){
   const d90=criticos.filter(c=>c.dias>60).length;
   const cls=classeDias(criticos[0].dias).cls;
   const chips=[
-    venc?'<span class="badge danger">'+venc+' vencido'+(venc>1?'s':'')+'</span>':'',
-    d30?'<span class="badge danger">'+d30+' em até 30 dias</span>':'',
-    d60?'<span class="badge orange">'+d60+' em 31–60 dias</span>':'',
-    d90?'<span class="badge warn">'+d90+' em 61–90 dias</span>':''
+    venc?'<span class="badge val-red">🔴 '+venc+' vencido'+(venc>1?'s':'')+'</span>':'',
+    d30?'<span class="badge val-red">🔴 '+d30+' em até 30 dias</span>':'',
+    d60?'<span class="badge val-orange">🟠 '+d60+' em 31–60 dias</span>':'',
+    d90?'<span class="badge val-yellow">🟡 '+d90+' em 61–90 dias</span>':''
   ].join('');
   let det='';
   if(uiAvisos.valAberto){
@@ -2256,9 +2305,10 @@ document.addEventListener('click', (e)=>{
 //   reposição completa  -> "Para conferência"
 //   conferência sem divergência e sem pendência -> "Pronta para uso"
 // Com pendência (reposição) o status NÃO avança; com divergência/pendência (conferência) a caixa fica em "Para conferência".
-async function atualizarStatusAposEtapa(modo, caixaId, itens){
+async function atualizarStatusAposEtapa(modo, caixaId, itens, resolvidos){
+  resolvidos = resolvidos || new Set();
   const pend=itens.some(i=>i.resultado==='PREENCHER'||i.resultado==='EM ANDAMENTO');
-  const diverg=itens.some(i=>i.resultado==='DIVERGÊNCIA');
+  const diverg=itens.some(i=>i.resultado==='DIVERGÊNCIA' && !resolvidos.has(String(i.codigo)));
   const atual=(state.statusCaixas[caixaId]||{}).status||null;
   let novo=null, aviso='';
   if(modo==='REPOSICAO'){
@@ -2322,7 +2372,20 @@ function chipsRepostosHtml(h, compacto){
     return '<span class="badge ok" style="'+est+'" title="'+esc(nome)+'">'+esc(nomeCurtoMedicamento(nome))+(t?' · '+t:'')+'</span>';
   }).join('');
 }
-const uiHist={sel:new Set()};
+const uiHist={sel:new Set(), ordem:'desc'};   // 'desc' = mais recentes primeiro
+function horarioHistorico(h){
+  // horário do registro em ms: usa criadoEm; nos registros antigos sem ele, monta a partir de data (dd/mm/aaaa) e hora
+  const t=h.criadoEm?new Date(h.criadoEm).getTime():NaN;
+  if(!isNaN(t)) return t;
+  const d=String(h.data||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/), hr=String(h.hora||'').match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if(d){ return new Date(+d[3],+d[2]-1,+d[1],hr?+hr[1]:0,hr?+hr[2]:0,hr&&hr[3]?+hr[3]:0).getTime(); }
+  const c=String(h.confId||'').match(/(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+  return c? new Date(+c[1],+c[2]-1,+c[3],+c[4],+c[5],+c[6]).getTime() : 0;
+}
+function ordenarHistorico(list){
+  const dir=uiHist.ordem==='asc'?1:-1;
+  return [...list].sort((a,b)=>dir*(horarioHistorico(a)-horarioHistorico(b)) || dir*String(a.confId).localeCompare(String(b.confId)));
+}
 function dataLocalISOHist(h){
   // AAAA-MM-DD da data do registro (fuso local); cai para o texto dd/mm/aaaa se não houver data ISO
   const d=h.criadoEm?new Date(h.criadoEm):null;
@@ -2342,7 +2405,7 @@ function historicoFiltrado(){
   if (busca) list = list.filter(h=> h.itens.some(it=>it.medicamento.toLowerCase().includes(busca)));
   if (de) list = list.filter(h=>{ const d=dataLocalISOHist(h); return d && d>=de; });
   if (ate) list = list.filter(h=>{ const d=dataLocalISOHist(h); return d && d<=ate; });
-  return list;
+  return ordenarHistorico(list);
 }
 function atualizarSelecaoHist(list){
   const ids=new Set(list.map(h=>h.confId));
@@ -2367,6 +2430,7 @@ function renderHistorico(){
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
       '</tr>';
   }).join('') || '<tr><td colspan="9" class="muted">Nenhum registro encontrado.</td></tr>';
+  const bo=document.getElementById('btnOrdemHist'); if(bo) bo.textContent = uiHist.ordem==='asc' ? '⬆️ Mais antigos primeiro' : '⬇️ Mais recentes primeiro';
   const resumoEl = document.getElementById('historicoResumo');
   if (resumoEl){
     const reps = list.filter(h=>h.tipo==='REPOSICAO').length;
@@ -2416,15 +2480,14 @@ function renderHistDetalhe(confId){
   const foiRep = (it)=>Array.isArray(h.itensRepostos) && h.itensRepostos.map(String).includes(String(it.codigo));
   card.style.borderTop='4px solid var(--'+(h.tipo==='REPOSICAO'?'rep':'conf')+')';
   card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;"><h2>'+tipoBadgeHtml(h.tipo)+' '+histDisplayId(h)+' — '+esc(h.caixaNome)+'</h2><button class="btn secondary btnFecharDetalhe" style="padding:4px 12px;">✕ Fechar</button></div>' +
-    '<div class="muted" style="margin-bottom:10px;">'+h.data+' às '+h.hora+' · responsável: <b>'+esc(h.responsavelNome)+'</b>'+(h.responsavelMatricula?' (matrícula '+esc(h.responsavelMatricula)+')':'')+'</div>' +
+    '<div class="muted" style="margin-bottom:10px;">'+h.data+' às '+h.hora+' · responsável: <b>'+esc(h.responsavelNome)+'</b>'+(h.responsavelMatricula?' (matrícula '+esc(h.responsavelMatricula)+')':'')+(h.finalizadoEm && dataLocalISO(h.finalizadoEm)!==dataLocalISO(h.criadoEm) ? ' · <b>finalizada em '+fmtDateBR(dataLocalISO(h.finalizadoEm))+' às '+fmtTimeBR(new Date(h.finalizadoEm))+'</b>' : '')+'</div>' +
     vinculo + repostosBloco +
-    '<div class="table-wrap"><table><thead><tr><th>Código</th><th>Medicamento</th><th>Qtd esperada</th><th>Qtd bipada</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Resultado</th><th>Ação</th></tr></thead><tbody>' +
+    '<div class="table-wrap"><table><thead><tr><th>Código</th><th>Medicamento</th><th>Qtd esperada</th><th>Qtd bipada</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Qtd por lote</th><th>Resultado</th><th>Ação</th></tr></thead><tbody>' +
     h.itens.map(it=>{
       const cls = it.resultado==='CONFORME'?'row-ok': (it.resultado==='PREENCHER'||it.resultado==='EM ANDAMENTO')?'row-pendente':'row-lote';
-      const lF = (it.lotesBipados||[]).map(l=>esc(l.loteFornecedor||'—')).join('<br>') || '—';
-      const lI = (it.lotesBipados||[]).map(l=>esc(l.loteInstitucional||'—')).join('<br>') || '—';
-      const val = (it.lotesBipados||[]).map(l=>fmtDateBR(l.validade)).join('<br>') || '—';
-      return '<tr class="'+cls+'"><td>'+esc(it.codigo)+'</td><td>'+esc(it.medicamento)+(foiRep(it)?' <span class="badge ok" style="margin-left:6px;">reposto'+(textoQtdReposta((h.qtdRepostos||{})[String(it.codigo)],it.qtdEsperada)?' ('+textoQtdReposta((h.qtdRepostos||{})[String(it.codigo)],it.qtdEsperada)+')':'')+'</span>':'')+'</td><td>'+it.qtdEsperada+'</td><td>'+it.qtdBipada+'</td><td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td>' +
+      const colL = lotesColunasHtml(it.lotesBipados);
+      const lF = colL.f, lI = colL.i, val = colL.v, lq = colL.q;
+      return '<tr class="'+cls+'"><td>'+esc(it.codigo)+'</td><td>'+esc(it.medicamento)+(foiRep(it)?' <span class="badge ok" style="margin-left:6px;">reposto'+(textoQtdReposta((h.qtdRepostos||{})[String(it.codigo)],it.qtdEsperada)?' ('+textoQtdReposta((h.qtdRepostos||{})[String(it.codigo)],it.qtdEsperada)+')':'')+'</span>':'')+'</td><td>'+it.qtdEsperada+'</td><td>'+it.qtdBipada+'</td><td>'+lF+'</td><td>'+lI+'</td><td>'+val+'</td><td>'+lq+'</td>' +
         '<td>'+it.resultado+(it.tipoDivergencia&&it.tipoDivergencia!=='—'?' — '+it.tipoDivergencia:'')+'</td><td>'+it.acao+'</td></tr>';
     }).join('') + '</tbody></table></div>';
 }
@@ -2781,7 +2844,7 @@ function htmlFolhaContagem(){
   const u=usuarioAtual();
   const tab=(id)=>tabelaParaFolha(id);
   return '<h1>Contagem de estoque — Caixas de Anestesia — Radioterapia</h1>'+
-    '<div class="pr-meta">Emitido em '+fmtDateBR(agora.toISOString().slice(0,10))+' às '+fmtTimeBR(agora)+(u?' por '+esc(u.nome)+(u.matricula?' ('+esc(u.matricula)+')':''):'')+' · '+CAIXAS.length+' caixas'+(busca?' · Filtro: “'+esc(busca)+'”':'')+'</div>'+
+    '<div class="pr-meta">Emitido em '+fmtDateBR(dataLocalISO(agora))+' às '+fmtTimeBR(agora)+(u?' por '+esc(u.nome)+(u.matricula?' ('+esc(u.matricula)+')':''):'')+' · '+CAIXAS.length+' caixas'+(busca?' · Filtro: “'+esc(busca)+'”':'')+'</div>'+
     '<h2>1. Contagem geral</h2>'+tab('contagemTable')+
     '<div class="pr-quebra"><h2>2. Total por lote</h2>'+tab('contagemLotesTable')+'</div>'+
     '<div class="pr-ass"><div>Responsável pela contagem</div><div>Data</div></div>';
@@ -2816,7 +2879,7 @@ function baixarCsvContagem(){
   const agora=new Date(), u=usuarioAtual();
   const linhas=[
     csvEscape('Contagem de estoque — Caixas de Anestesia — Radioterapia'),
-    csvEscape('Emitido em '+fmtDateBR(agora.toISOString().slice(0,10))+' às '+fmtTimeBR(agora)+(u?' por '+u.nome:'')),
+    csvEscape('Emitido em '+fmtDateBR(dataLocalISO(agora))+' às '+fmtTimeBR(agora)+(u?' por '+u.nome:'')),
     '', csvEscape('1. Contagem geral'), ...linhasCsvDaTabela('contagemTable'),
     '', csvEscape('2. Total por lote'), ...linhasCsvDaTabela('contagemLotesTable')
   ];
@@ -3075,7 +3138,7 @@ async function ensureGtinSeeds(){
   }
 }
 function subscribeReferencia(){ dbApi.collection('referencia').onSnapshot(snap=>{ snap.docs.forEach(d=>{ state.referencia[d.id] = d.data(); }); renderAll(); }, err=>console.error(err)); }
-function subscribeHistorico(){ dbApi.collection('historico').orderBy('criadoEm','desc').limit(400).onSnapshot(snap=>{ state.historico = snap.docs.map(d=>d.data()); renderHistorico(); renderRepInfoPanel(); }, err=>console.error(err)); }
+function subscribeHistorico(){ dbApi.collection('historico').orderBy('criadoEm','desc').limit(400).onSnapshot(snap=>{ state.historico = snap.docs.map(d=>d.data()).sort((a,b)=>horarioHistorico(b)-horarioHistorico(a));   // mais recente primeiro (a "última reposição" depende disso) renderHistorico(); renderRepInfoPanel(); }, err=>console.error(err)); }
 function subscribeMapeamentos(){ dbApi.collection('mapeamentos').onSnapshot(snap=>{ state.mapeamentos = {}; snap.docs.forEach(d=>{ state.mapeamentos[decodeURIComponent(d.id)] = d.data(); }); renderMapeamentoTable(); }, err=>console.error(err)); }
 function subscribeLotesConhecidos(){ dbApi.collection('lotesConhecidos').onSnapshot(snap=>{ state.lotesConhecidos = {}; snap.docs.forEach(d=>{ state.lotesConhecidos[decodeURIComponent(d.id)] = d.data(); }); renderLotesConhecidosTable(); }, err=>console.error(err)); }
 function subscribeMapaLotesGlobais(){ dbApi.collection('mapaLotesGlobais').onSnapshot(snap=>{ state.mapaLotesGlobais={}; snap.docs.forEach(d=>{ state.mapaLotesGlobais[decodeURIComponent(d.id)]=d.data(); }); renderVinculosTable(); },err=>console.error(err)); }
@@ -3121,16 +3184,18 @@ async function finalizarBipagem(){
   const bipados = itens.filter(i=>i.qtdBipada>0).length;
   if (bipados===0){ mostrarToast('Bipe pelo menos um item antes de finalizar.', 'erro'); return; }
   const now = new Date();
+  const ini = (state.inicioBipagem && Object.keys(state.session).length) ? new Date(state.inicioBipagem) : null;
+  const quando = (ini && !isNaN(ini)) ? ini : now;   // data/hora do registro = quando a bipagem foi FEITA
   const prefixo = state.modo==='REPOSICAO' ? 'REP' : 'CONF';
   const confId = prefixo+'-'+caixa.nome.replace(/[^A-Za-z0-9]+/g,'').slice(0,10)+'-'+fmtYYYYMMDD(now)+'-'+fmtHHMMSS(now);
-  const idCurto = idHistoricoLegivel(state.modo, caixa.nome, now);
+  const idCurto = idHistoricoLegivel(state.modo, caixa.nome, quando);
   const u = usuarioAtual();
   const doc = {
     confId, idCurto, tipo: state.modo,
-    data:fmtDateBR(now.toISOString().slice(0,10)), hora:fmtTimeBR(now),
+    data:fmtDateBR(dataLocalISO(quando)), hora:fmtTimeBR(quando),
     caixaId: state.caixaId, caixaNome: caixa.nome,
     responsavelNome: u.nome, responsavelMatricula: u.matricula||'', responsavelId: state.usuarioId||null,
-    itens, criadoEm: now.toISOString(),
+    itens, criadoEm: quando.toISOString(), finalizadoEm: now.toISOString(),
     totalItensCaixa: caixa.itens.length
   };
   if (state.modo==='REPOSICAO'){
@@ -3142,6 +3207,11 @@ async function finalizarBipagem(){
     const rep = state.historico.find(h=>h.tipo==='REPOSICAO' && h.caixaId===state.caixaId);
     if (rep) doc.refReposicaoId = rep.confId;
   }
+  let resolvidos = new Set();   // divergências resolvidas por atualização do cadastro (conferência)
+  if (state.modo==='CONFERENCIA'){
+    doc.decisoesDivergencia = {};
+    itens.filter(i=>i.resultado==='DIVERGÊNCIA').forEach(i=>{ const d=(state.decisaoDivergencia||{})[String(i.codigo)]; if(d) doc.decisoesDivergencia[String(i.codigo)]=d; });
+  }
   try{
     if (dbApi){ await dbApi.doc('historico/'+confId).set(doc); } else { state.historico.unshift(doc); }
     mostrarToast('✅ '+(state.modo==='REPOSICAO'?'Reposição':'Conferência')+' '+idCurto+' salva · '+bipados+'/'+itens.length+' itens.');
@@ -3150,19 +3220,28 @@ async function finalizarBipagem(){
       // depois de finalizada e salva no histórico. Lotes antigos são substituídos pelos bipados.
       await atualizarCadastroComBipagem(itens);
     } else {
-      // Conferência: nunca altera o cadastro sozinha. Se houve divergência, pergunta antes.
+      // Conferência: o cadastro só muda se a pessoa decidir. A decisão é tomada na hora da divergência;
+      // o que ficou sem decisão é perguntado aqui.
       const divergentes = itens.filter(i=>i.resultado==='DIVERGÊNCIA' && i.lotesBipados.length>0);
       if(divergentes.length){
-        const corpo = '<div class="muted">A conferência encontrou divergência em <b>'+divergentes.length+'</b> item(ns):</div>' +
-          '<ul style="margin:8px 0 8px 18px;padding:0;">'+divergentes.map(d=>'<li>'+esc(d.medicamento)+' — '+esc(d.tipoDivergencia)+'</li>').join('')+'</ul>' +
-          '<div class="muted">Se você atualizar, os lotes cadastrados <b>destes itens</b> serão substituídos pelo que foi bipado agora (com as quantidades por lote). Se não atualizar, o cadastro permanece como está. Deseja atualizar o cadastro?</div>';
-        const ok = await confirmarEstilizado('Atualizar o cadastro da caixa?', corpo, 'Atualizar cadastro', 'Não alterar');
-        if (ok) await atualizarCadastroComBipagem(divergentes);
-        else mostrarToast('Conferência salva. Cadastro mantido como estava.');
+        const dec = state.decisaoDivergencia || {};
+        const paraAtualizar = divergentes.filter(d=>dec[String(d.codigo)]==='atualizar');
+        const indecisos = divergentes.filter(d=>!dec[String(d.codigo)]);
+        let atualizados = [];
+        if (paraAtualizar.length) atualizados = atualizados.concat(await atualizarCadastroComBipagem(paraAtualizar));
+        if (indecisos.length){
+          const corpo = '<div class="muted">A conferência encontrou divergência em <b>'+indecisos.length+'</b> item(ns):</div>' +
+            '<ul style="margin:8px 0 8px 18px;padding:0;">'+indecisos.map(d=>'<li>'+esc(d.medicamento)+' — '+esc(d.tipoDivergencia)+'</li>').join('')+'</ul>' +
+            '<div class="muted">Se você atualizar, os lotes cadastrados <b>destes itens</b> serão substituídos pelo que foi bipado agora (com as quantidades por lote). Se não atualizar, o cadastro permanece como está. Deseja atualizar o cadastro?</div>';
+          const ok = await confirmarEstilizado('Atualizar o cadastro da caixa?', corpo, 'Atualizar cadastro', 'Não alterar');
+          if (ok) atualizados = atualizados.concat(await atualizarCadastroComBipagem(indecisos));
+        }
+        resolvidos = new Set(atualizados.map(String));
+        if (!atualizados.length) mostrarToast('Conferência salva. Cadastro mantido como estava.');
       } else mostrarToast('✅ Conferência salva sem divergências.');
     }
-    await atualizarStatusAposEtapa(state.modo, state.caixaId, itens);
-    state.session = {}; state.lastScan = null; state.pulados = new Set(); state.repostos = null; state.qtdRepostos = {};
+    await atualizarStatusAposEtapa(state.modo, state.caixaId, itens, resolvidos);
+    state.session = {}; state.lastScan = null; state.pulados = new Set(); state.repostos = null; state.qtdRepostos = {}; state.inicioBipagem = null; state.decisaoDivergencia = {};
     renderLastScan(); renderBipagemTable(); renderHistorico(); renderRepInfoPanel(); renderProximoItem();
     setTimeout(()=>abrirSeletorBipagem(), 400);   // próxima reposição/conferência: escolhe caixa, modo e itens
   } catch(e){ console.error(e); mostrarToast('Não foi possível salvar agora. Tente novamente.', 'erro'); }
@@ -3171,6 +3250,7 @@ async function finalizarBipagem(){
 async function atualizarCadastroComBipagem(itensBipados){
   const caixa = currentCaixa();
   const excedidos = [];
+  const atualizados = [];
   const novosItens = caixa.itens.map(item=>{
     const bip = itensBipados.find(i=>String(i.codigo)===String(item.codigo));
     if (!bip || bip.lotesBipados.length===0) return item;
@@ -3222,6 +3302,7 @@ async function atualizarCadastroComBipagem(itensBipados){
       validade:l.validade,
       qtdeMax:Number(l.qtd||0)
     })).filter(l=>l.qtdeMax>0);
+    atualizados.push(String(item.codigo));
     return {...item, lotes:lotesAtuais};
   });
   state.referencia[state.caixaId] = {...caixa, itens: novosItens};
@@ -3240,6 +3321,7 @@ async function atualizarCadastroComBipagem(itensBipados){
     await confirmarEstilizado('Cadastro NÃO atualizado: quantidade acima do previsto',
       '<div class="muted">O total por medicamento não pode passar do previsto. Estes itens foram mantidos como estavam no cadastro — corrija a quantidade ou o cadastro:</div><ul style="margin:8px 0 0 18px;padding:0;">'+linhas+'</ul>','Entendi','Fechar');
   }
+  return atualizados;
 }
 
 /* ---------------- Boot / events ---------------- */
@@ -3327,7 +3409,7 @@ let rascunhoLiberado=false;   // só passa a gravar/apagar depois de oferecer a 
 function salvarRascunhoBipagem(){
   if(!rascunhoLiberado) return;
   try{
-    if(bipagemEmAndamento()) localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({caixaId:state.caixaId,modo:state.modo,session:state.session,pulados:[...state.pulados],repostos:state.repostos?[...state.repostos]:null,qtdRepostos:state.qtdRepostos||{},usuarioId:state.usuarioId||null,salvoEm:new Date().toISOString()}));
+    if(bipagemEmAndamento()) localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({caixaId:state.caixaId,modo:state.modo,session:state.session,pulados:[...state.pulados],repostos:state.repostos?[...state.repostos]:null,qtdRepostos:state.qtdRepostos||{},inicioBipagem:state.inicioBipagem||null,decisaoDivergencia:state.decisaoDivergencia||{},usuarioId:state.usuarioId||null,salvoEm:new Date().toISOString()}));
     else localStorage.removeItem(CHAVE_RASCUNHO);
   }catch(e){}
 }
@@ -3347,9 +3429,9 @@ async function oferecerRetomarRascunho(){
     const n=Object.values(d.session).reduce((t,x)=>t+(Number(x.qtd)||0),0);
     const nomeCx=(state.referencia[d.caixaId]&&state.referencia[d.caixaId].nome)||d.caixaId;
     const quando=new Date(d.salvoEm);
-    const retomar=await confirmarEstilizado('Bipagem não finalizada encontrada','<div class="muted">Há uma <b>'+(d.modo==='REPOSICAO'?'reposição':'conferência')+'</b> da caixa <b>'+esc(nomeCx)+'</b> com <b>'+n+'</b> unidade(s) bipada(s), salva em '+fmtDateBR(d.salvoEm.slice(0,10))+' '+fmtTimeBR(quando)+', que não foi finalizada. Deseja retomar de onde parou?</div>','Retomar','Descartar');
+    const retomar=await confirmarEstilizado('Bipagem não finalizada encontrada','<div class="muted">Há uma <b>'+(d.modo==='REPOSICAO'?'reposição':'conferência')+'</b> da caixa <b>'+esc(nomeCx)+'</b> com <b>'+n+'</b> unidade(s) bipada(s), salva em '+fmtDateBR(dataLocalISO(d.salvoEm))+' '+fmtTimeBR(quando)+', que não foi finalizada. Deseja retomar de onde parou?</div>','Retomar','Descartar');
     if(retomar){
-      state.caixaId=d.caixaId; state.modo=d.modo; state.session=d.session; state.pulados=new Set(d.pulados||[]); state.repostos=d.repostos?new Set(d.repostos):null; state.qtdRepostos=d.qtdRepostos||{}; state.lastScan=null;
+      state.caixaId=d.caixaId; state.modo=d.modo; state.session=d.session; state.pulados=new Set(d.pulados||[]); state.repostos=d.repostos?new Set(d.repostos):null; state.qtdRepostos=d.qtdRepostos||{}; state.inicioBipagem=d.inicioBipagem||null; state.decisaoDivergencia=d.decisaoDivergencia||{}; state.lastScan=null;
       document.getElementById('caixaSelect').value=d.caixaId;
       document.getElementById('modoReposicao').classList.toggle('active', d.modo==='REPOSICAO');
       document.getElementById('modoConferencia').classList.toggle('active', d.modo==='CONFERENCIA');
@@ -3422,7 +3504,7 @@ async function switchTab(tab){
 }
 function updateClock(){
   const now = new Date();
-  document.getElementById('clockDisplay').textContent = fmtDateBR(now.toISOString().slice(0,10))+' '+fmtTimeBR(now);
+  document.getElementById('clockDisplay').textContent = fmtDateBR(dataLocalISO(now))+' '+fmtTimeBR(now);
 }
 function loadLocalPrefs(){
   try{ const v = localStorage.getItem('psi_usuarioId'); if (v) state.usuarioId = v; } catch(e){}
@@ -3555,7 +3637,8 @@ async function entradaManual(){
   if (itemAtual){
     const status = computeStatus(itemAtual, state.session[String(codigo)]);
     if (status.resultado==='DIVERGÊNCIA'){
-      await avisoDivergenciaPopup(itemAtual.medicamento, status);
+      const dec = await avisoDivergenciaPopup(itemAtual.medicamento, status, {decidir: state.modo==='CONFERENCIA'});
+      if (state.modo==='CONFERENCIA' && dec) state.decisaoDivergencia[String(codigo)] = dec;
     }
   }
 }
@@ -3570,6 +3653,7 @@ document.querySelector('#bipagemTable tbody').addEventListener('click', async (e
   const ok = await confirmarEstilizado('Apagar bipagem?', '<div class="muted">Vai apagar tudo que foi bipado agora pra "'+esc(item?item.medicamento:codigo)+'" nesta sessão (não afeta o histórico já salvo). Você pode bipar de novo em seguida.</div>', 'Apagar', 'Cancelar');
   if (!ok) return;
   delete state.session[String(codigo)];
+  delete state.decisaoDivergencia[String(codigo)];
   state.pulados.delete(String(codigo));
   if (state.lastScan && String(state.lastScan.codigo)===String(codigo)) state.lastScan = null;
   renderLastScan(); renderBipagemTable(); renderProximoItem();
@@ -3635,6 +3719,7 @@ document.getElementById('alertaCaixaSelect').addEventListener('change', renderAl
 document.getElementById('histTipoSelect').addEventListener('change', renderHistorico);
 document.getElementById('histCaixaSelect').addEventListener('change', renderHistorico);
 document.getElementById('histBusca').addEventListener('input', debounce(renderHistorico, 200));
+document.getElementById('btnOrdemHist').addEventListener('click',()=>{ uiHist.ordem = uiHist.ordem==='asc'?'desc':'asc'; renderHistorico(); });
 document.getElementById('histDe').addEventListener('change', renderHistorico);
 document.getElementById('histAte').addEventListener('change', renderHistorico);
 document.querySelectorAll('.btnPeriodoHist').forEach(b=>b.addEventListener('click',()=>definirPeriodoHist(b.dataset.per)));
