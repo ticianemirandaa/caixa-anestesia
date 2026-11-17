@@ -388,7 +388,8 @@ a{color:var(--primary);}
       <div class="flex" style="margin-bottom:10px;">
         <select id="histTipoSelect"><option value="__all__">Reposição e conferência</option><option value="REPOSICAO">Só reposição</option><option value="CONFERENCIA">Só conferência</option></select>
         <select id="histCaixaSelect"><option value="__all__">Todas as caixas</option></select>
-        <input type="text" id="histBusca" placeholder="Buscar medicamento…" style="min-width:200px;">
+        <input type="text" id="histBusca" placeholder="Buscar medicamento, código ou lote…" style="min-width:200px;">
+        <label class="muted" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="histBuscaTudo" style="width:18px;height:18px;"> incluir onde só foi bipado</label>
         <button class="btn secondary" id="btnOrdemHist" title="Inverter a ordem por horário">⬇️ Mais recentes primeiro</button>
       </div>
       <div class="flex" style="margin-bottom:10px;align-items:center;">
@@ -2372,6 +2373,43 @@ function chipsRepostosHtml(h, compacto){
     return '<span class="badge ok" style="'+est+'" title="'+esc(nome)+'">'+esc(nomeCurtoMedicamento(nome))+(t?' · '+t:'')+'</span>';
   }).join('');
 }
+function semAcentoMin(t){ return String(t==null?'':t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
+// O que cada item da busca significa naquele registro (todo registro guarda TODOS os itens da caixa, então
+// "tem o item" não diz nada; o que importa é se ele foi reposto, teve divergência ou o lote bate).
+function itensCorrespondentesBusca(h, q){
+  q = semAcentoMin(q).trim();
+  const out=[];
+  if(!q) return out;
+  const rep = (h.tipo==='CONFERENCIA' && h.refReposicaoId) ? state.historico.find(x=>x.confId===h.refReposicaoId) : null;
+  const listaRep = (h.tipo==='REPOSICAO' && Array.isArray(h.itensRepostos)) ? h.itensRepostos.map(String) : null;
+  const listaRef = (rep && Array.isArray(rep.itensRepostos)) ? rep.itensRepostos.map(String) : null;
+  (h.itens||[]).forEach(it=>{
+    const casaNome = semAcentoMin(it.medicamento).includes(q) || String(it.codigo||'').includes(q);
+    const lotes = (it.lotesBipados||[]).filter(l=>semAcentoMin(l.loteFornecedor).includes(q)||semAcentoMin(l.loteInstitucional).includes(q));
+    if(!casaNome && !lotes.length) return;
+    const cod=String(it.codigo);
+    let motivo='bipado', texto='só bipado';
+    if (h.tipo==='REPOSICAO'){
+      if (listaRep===null){ motivo='legado'; texto='bipado (registro antigo, sem lista de repostos)'; }
+      else if (listaRep.includes(cod)){ motivo='reposto'; const t=textoQtdReposta((h.qtdRepostos||{})[cod], it.qtdEsperada); texto='reposto'+(t?' ('+t+')':''); }
+    } else {
+      if (it.resultado==='DIVERGÊNCIA'){ motivo='divergencia'; texto='divergência: '+(it.tipoDivergencia||''); }
+      else if (listaRef && listaRef.includes(cod)){ motivo='reposto-ref'; texto='conferido (reposto em '+histDisplayId(rep)+')'; }
+    }
+    if (!casaNome && lotes.length){ motivo = (motivo==='bipado') ? 'lote' : motivo; }
+    out.push({it, motivo, texto, lotes, casaPorLote: !casaNome});
+  });
+  return out;
+}
+function registroCasaBusca(h, q, incluirTudo){
+  return itensCorrespondentesBusca(h,q).some(m=> incluirTudo || m.motivo!=='bipado');
+}
+function resumoBuscaHtml(h, q, incluirTudo){
+  const ms=itensCorrespondentesBusca(h,q).filter(m=>incluirTudo||m.motivo!=='bipado');
+  if(!ms.length) return '';
+  const linha=(m)=>'<div style="font-size:12px;margin-top:4px;">🔎 <b>'+esc(nomeCurtoMedicamento(m.it.medicamento))+'</b> · '+esc(m.texto)+(m.lotes.length?' · lote '+m.lotes.map(l=>esc(l.loteInstitucional||l.loteFornecedor||'—')+' ('+(Number(l.qtd)||0)+' un.)').join(', '):'')+'</div>';
+  return ms.slice(0,3).map(linha).join('')+(ms.length>3?'<div class="muted" style="font-size:12px;">+'+(ms.length-3)+' item(ns)</div>':'');
+}
 const uiHist={sel:new Set(), ordem:'desc'};   // 'desc' = mais recentes primeiro
 function horarioHistorico(h){
   // horário do registro em ms: usa criadoEm; nos registros antigos sem ele, monta a partir de data (dd/mm/aaaa) e hora
@@ -2396,13 +2434,14 @@ function dataLocalISOHist(h){
 function historicoFiltrado(){
   const selTipo = document.getElementById('histTipoSelect').value;
   const selCaixa = document.getElementById('histCaixaSelect').value;
-  const busca = (document.getElementById('histBusca').value||'').toLowerCase();
+  const busca = semAcentoMin(document.getElementById('histBusca').value||'').trim();
+  const buscaTudo = !!(document.getElementById('histBuscaTudo')||{}).checked;
   const de = (document.getElementById('histDe').value||'');
   const ate = (document.getElementById('histAte').value||'');
   let list = state.historico;
   if (selTipo!=='__all__') list = list.filter(h=>h.tipo===selTipo);
   if (selCaixa!=='__all__') list = list.filter(h=>h.caixaId===selCaixa);
-  if (busca) list = list.filter(h=> h.itens.some(it=>it.medicamento.toLowerCase().includes(busca)));
+  if (busca) list = list.filter(h=>registroCasaBusca(h, busca, buscaTudo));
   if (de) list = list.filter(h=>{ const d=dataLocalISOHist(h); return d && d>=de; });
   if (ate) list = list.filter(h=>{ const d=dataLocalISOHist(h); return d && d<=ate; });
   return ordenarHistorico(list);
@@ -2426,6 +2465,7 @@ function renderHistorico(){
       '<td><b>'+histDisplayId(h)+'</b></td><td>'+tipoBadge+'</td><td>'+h.data+'</td><td>'+h.hora+'</td><td>'+esc(h.caixaNome)+'</td>' +
       '<td>'+esc(h.responsavelNome)+(h.responsavelMatricula?' ('+esc(h.responsavelMatricula)+')':'')+'</td>' +
       '<td><div><b>'+h.itens.filter(it=>it.qtdBipada>0).length+'/'+h.itens.length+'</b> bipados</div>'+
+        resumoBuscaHtml(h, (document.getElementById('histBusca').value||''), !!(document.getElementById('histBuscaTudo')||{}).checked)+
         (chipsRepostosHtml(h,true) ? '<div style="margin-top:6px;"><div class="muted" style="font-size:12px;margin-bottom:3px;">📦 Repostos ('+h.itensRepostos.length+')</div><div style="display:flex;flex-wrap:wrap;gap:4px;">'+chipsRepostosHtml(h,true)+'</div></div>' : '')+'</td>' +
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
       '</tr>';
@@ -3720,6 +3760,7 @@ document.getElementById('histTipoSelect').addEventListener('change', renderHisto
 document.getElementById('histCaixaSelect').addEventListener('change', renderHistorico);
 document.getElementById('histBusca').addEventListener('input', debounce(renderHistorico, 200));
 document.getElementById('btnOrdemHist').addEventListener('click',()=>{ uiHist.ordem = uiHist.ordem==='asc'?'desc':'asc'; renderHistorico(); });
+document.getElementById('histBuscaTudo').addEventListener('change', renderHistorico);
 document.getElementById('histDe').addEventListener('change', renderHistorico);
 document.getElementById('histAte').addEventListener('change', renderHistorico);
 document.querySelectorAll('.btnPeriodoHist').forEach(b=>b.addEventListener('click',()=>definirPeriodoHist(b.dataset.per)));
