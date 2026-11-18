@@ -6,6 +6,7 @@
 <title>Caixa de Anestesia — Radioterapia — Einstein</title>
 <style>
 :root{
+  color-scheme:light;
   --bg:#f4f6f8; --panel:#ffffff; --text:#1a2233; --muted:#5b6675; --border:#dfe4ea;
   --primary:#0096d2; --primary-dark:#00539a; --primary-contrast:#ffffff;
   --ok:#1e8e5a; --ok-bg:#e6f6ee; --accent2:#4fa8e0;
@@ -20,8 +21,9 @@
   --grey-bg:#eef0f2;
   --shadow: 0 1px 3px rgba(20,30,40,.08), 0 1px 2px rgba(20,30,40,.06);
 }
-:root:not([data-theme="light"]){
-  @media (prefers-color-scheme: dark){
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
     --bg:#12181c; --panel:#1b2328; --text:#e8edf0; --muted:#9aa7ad; --border:#2c363c;
     --primary:#00dbff; --primary-dark:#00539a; --primary-contrast:#062338;
     --ok:#4fbf83; --ok-bg:#123023;
@@ -38,6 +40,7 @@
   }
 }
 :root[data-theme="dark"]{
+  color-scheme:dark;
   --bg:#12181c; --panel:#1b2328; --text:#e8edf0; --muted:#9aa7ad; --border:#2c363c;
   --primary:#00dbff; --primary-dark:#00539a; --primary-contrast:#062338;
   --ok:#4fbf83; --ok-bg:#123023;
@@ -62,7 +65,7 @@ header h1 span{display:block; font-size:13.2px; font-weight:400; opacity:.85;}
 .hdr-controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
 .hdr-controls label{font-size:13.2px; opacity:.85; display:block; margin-bottom:2px;}
 .hdr-field{display:flex; flex-direction:column;}
-select, input[type=text], input[type=date], input[type=time], input[type=number], textarea{font-size:15.6px; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--panel); color:var(--text); min-width:0;}
+select, input[type=text], input[type=date], input[type=time], input[type=number], textarea{font-size:16px; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--panel); color:var(--text); min-width:0;}
 .hdr-controls select{min-width:170px;}
 .clock{font-size:14.4px; opacity:.9; text-align:right;}
 nav.tabs{display:flex; overflow-x:auto; background:var(--panel); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5;}
@@ -107,7 +110,7 @@ tr.row-pendente td{color:var(--muted);}
 .table-wrap{overflow-x:auto;}
 .overlay{position:fixed; inset:0; background:rgba(0,0,0,.5); display:none; align-items:center; justify-content:center; z-index:50; padding:16px;}
 .overlay.open{display:flex;}
-.modal{background:var(--panel); border-radius:12px; padding:20px; max-width:440px; width:100%; box-shadow:var(--shadow); max-height:90vh; overflow-y:auto;}
+.modal{background:var(--panel); border-radius:12px; padding:20px; max-width:440px; width:100%; box-shadow:var(--shadow); max-height:90vh; max-height:90dvh; overflow-y:auto;}
 .modal h3{margin:0 0 12px; font-size:18px;}
 .modal .row{margin-bottom:10px; display:flex; flex-direction:column; gap:4px;}
 .modal .actions{display:flex; justify-content:flex-end; gap:8px; margin-top:14px;}
@@ -230,6 +233,13 @@ a{color:var(--primary);}
 .itemcard{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; transition:background .3s, border-color .3s;}
 .itemcard.highlight{border-color:var(--primary); background:var(--ok-bg);}
 .itemcard input[type=text], .itemcard input[type=number], .itemcard input[type=date]{width:100%;}
+/* auditoria: verificações extras e registro de ações */
+details.aud-box>summary{cursor:pointer; font-weight:700; padding:8px 0; font-size:16px;}
+.badge.g-alta{background:var(--danger-bg); color:var(--danger);}
+.badge.g-media{background:var(--orange-bg); color:var(--orange);}
+.badge.g-baixa{background:var(--warn-bg); color:var(--warn);}
+tr.aud-rev td{opacity:.55;}
+.aud-pre{max-height:50vh; overflow:auto; white-space:pre-wrap; word-break:break-word; font-size:12.5px; background:var(--grey-bg); border-radius:8px; padding:8px 10px; margin-top:8px;}
 </style>
 </head>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -494,6 +504,18 @@ a{color:var(--primary);}
       <div class="table-wrap">
         <table id="auditoriaTable"><thead><tr><th>Tipo</th><th>Caixa / origem</th><th>Cadastro encontrado</th><th>Motivo</th><th>Ação</th></tr></thead><tbody></tbody></table>
       </div>
+      <details class="aud-box" id="audVerifBox" open style="margin-top:16px;">
+        <summary>Verificações adicionais <span class="muted" id="audVerifResumo"></span></summary>
+        <div class="muted" style="margin:2px 0 8px;">Só sugerem: nada é apagado ou alterado por aqui. “Revisado” vale só neste aparelho.</div>
+        <label class="muted" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><input type="checkbox" id="audMostrarRev"> Mostrar revisados</label>
+        <div class="table-wrap"><table id="audVerifTable"><thead><tr><th>Gravidade</th><th>Onde</th><th>O que foi encontrado</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
+      </details>
+      <details class="aud-box" id="audLogBox" style="margin-top:12px;">
+        <summary>Registro de ações <span class="muted" id="audLogResumo"></span></summary>
+        <div id="audLogAviso"></div>
+        <div class="flex" style="margin:4px 0 8px;"><button class="btn secondary" id="btnBaixarLog" style="padding:5px 10px;">Baixar registro (JSON)</button></div>
+        <div class="table-wrap"><table id="audLogTable"><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>O que</th></tr></thead><tbody></tbody></table></div>
+      </details>
     </div>
   </section>
 
@@ -1650,8 +1672,8 @@ function renderRepInfoPanel(){
   panel.innerHTML = '<div class="card">' +
     '<h2>Última reposição desta caixa</h2>' +
     '<div class="muted" style="margin-bottom:10px;">Feita por <b>'+esc(rep.responsavelNome)+'</b>'+(rep.responsavelMatricula?' (matrícula '+esc(rep.responsavelMatricula)+')':'')+' em '+rep.data+' às '+rep.hora+' — ID '+histDisplayId(rep)+'</div>' +
-    (itensRepostos.length ? '<div class="table-wrap"><table><thead><tr><th>Medicamento</th><th>Qtd reposta</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th></tr></thead><tbody>' +
-      itensRepostos.map(i=>'<tr><td>'+esc(i.medicamento)+'</td><td>'+i.qtdBipada+'</td><td>'+(i.lotesBipados||[]).map(l=>esc(l.loteFornecedor||'—')).join('<br>')+'</td><td>'+(i.lotesBipados||[]).map(l=>esc(l.loteInstitucional||'—')).join('<br>')+'</td><td>'+(i.lotesBipados||[]).map(l=>fmtDateBR(l.validade)).join('<br>')+'</td></tr>').join('') +
+    (itensRepostos.length ? '<div class="table-wrap"><table><thead><tr><th>Medicamento</th><th>Qtd reposta</th><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Qtd por lote</th></tr></thead><tbody>' +
+      itensRepostos.map(i=>{ const c=lotesColunasHtml(i.lotesBipados); return '<tr><td>'+esc(i.medicamento)+'</td><td>'+i.qtdBipada+'</td><td>'+c.f+'</td><td>'+c.i+'</td><td>'+c.v+'</td><td>'+c.q+'</td></tr>'; }).join('') +
       '</tbody></table></div>' : '<div class="muted">Nenhum item foi bipado nessa reposição.</div>') +
     '</div>';
 }
@@ -1737,7 +1759,7 @@ function lotesColunasHtml(lotes){
     f:L.map(l=>ln(esc(l.loteFornecedor||'—'))).join(''),
     i:L.map(l=>ln(esc(l.loteInstitucional||'—'))).join(''),
     v:L.map(l=>ln(l.validade?fmtDateBR(l.validade):'—')).join(''),
-    q:L.map(l=>ln('<span class="badge qtd-lote">'+(Number(l.qtd)||0)+' un.</span>')).join('')
+    q:L.map(l=>ln('<span class="badge qtd-lote">'+((l.qtd===undefined||l.qtd===null||l.qtd==='')?'—':(Number(l.qtd)||0)+' un.')+'</span>')).join('')
   };
 }
 function renderBipagemTable(){
@@ -2071,10 +2093,11 @@ document.getElementById('btnReimportarPlanilha').addEventListener('click', async
   const ok = await confirmarEstilizado('Reimportar da planilha?', corpo, 'Reimportar', 'Cancelar');
   if (!ok) return;
   const itensNovos = JSON.parse(JSON.stringify(dadosPlanilha));
+  const antesImpJson = JSON.stringify(state.referencia[state.caixaId]||null);
   state.referencia[state.caixaId] = {nome: caixa.nome, itens: itensNovos};
   renderAll();
   if (dbApi){
-    try{ await dbApi.doc('referencia/'+state.caixaId).set({nome:caixa.nome, itens:itensNovos}); mostrarToast('✅ Cadastro reimportado da planilha.'); }
+    try{ await dbApi.doc('referencia/'+state.caixaId).set({nome:caixa.nome, itens:itensNovos}); mostrarToast('✅ Cadastro reimportado da planilha.'); registrarLog('Cadastro','Alterar','Cadastro reimportado da planilha: '+caixa.nome, {caixaId:state.caixaId, antes:JSON.parse(antesImpJson), depois:{nome:caixa.nome, itens:itensNovos}}); }
     catch(e){ console.error(e); mostrarToast('⚠️ Reimportado localmente, mas não sincronizou.', 'erro'); }
   } else { mostrarToast('⚠️ Reimportado localmente (sem sincronização).', 'erro'); }
 });
@@ -2093,6 +2116,7 @@ document.getElementById('btnSalvarCadastro').addEventListener('click', async ()=
     await confirmarEstilizado('Cadastro NÃO salvo: lotes somam mais que o previsto','<div class="muted">Ajuste as quantidades por lote (ou a quantidade total do medicamento) e salve novamente. Pode haver 2, 3 ou mais lotes, desde que a soma não passe do previsto:</div><ul style="margin:8px 0 0 18px;padding:0;">'+linhas+'</ul>','Voltar e corrigir','Fechar');
     return;
   }
+  const antesCadJson = JSON.stringify(state.referencia[state.caixaId]||null);
   state.referencia[state.caixaId] = {nome, itens};
   try{
     if(dbApi) await dbApi.doc('referencia/'+state.caixaId).set({nome,itens});
@@ -2107,6 +2131,7 @@ document.getElementById('btnSalvarCadastro').addEventListener('click', async ()=
       const okMapa=await confirmarEstilizado('Criar vínculos globais de lote?',corpo,'Confirmar vínculos','Salvar sem vincular');
       if(okMapa){ for(const {l} of novos){ if(await salvarMapaGlobalEPropagar(l.loteFornecedor,l.loteInstitucional,l.validade)) mapas++; } }
     }
+    if(JSON.stringify({nome,itens})!==antesCadJson) registrarLog('Cadastro','Alterar','Cadastro salvo: '+nome, {caixaId:state.caixaId, antes:JSON.parse(antesCadJson), depois:{nome,itens}});
     renderAll();
     mostrarToast('✅ Cadastro salvo. Lotes equivalentes foram unidos em uma única linha. '+(mapas?mapas+' vínculo(s) aplicado(s) em todas as caixas e medicamentos.':'Sem novo vínculo global.'));
   }catch(e){ console.error(e); mostrarToast('⚠️ Salvo localmente, mas não sincronizou agora.', 'erro'); }
@@ -2492,13 +2517,14 @@ async function excluirHistoricos(ids){
   const lista=alvo.slice(0,6).map(h=>'<li><b>'+esc(histDisplayId(h))+'</b> — '+esc(h.caixaNome)+', '+esc(h.data)+' '+esc(h.hora)+'</li>').join('')+(alvo.length>6?'<li class="muted">… e mais '+(alvo.length-6)+'</li>':'');
   const ok=await confirmarEstilizado('Excluir '+(alvo.length===1?'este registro':alvo.length+' registros')+' do histórico?','<div class="muted">Esta ação <b>não pode ser desfeita</b>. Se precisar guardar, faça antes o <b>Backup completo (JSON)</b>.</div><ul style="margin:8px 0 0 18px;padding:0;">'+lista+'</ul>','Excluir','Cancelar');
   if(!ok) return false;
-  let falhas=0;
+  let falhas=0; const removidos=[];
   for(const h of alvo){
     try{ if(dbApi) await dbApi.doc('historico/'+h.confId).delete(); }
     catch(e){ console.error(e); falhas++; continue; }
     state.historico=state.historico.filter(x=>x.confId!==h.confId);
-    uiHist.sel.delete(h.confId);
+    uiHist.sel.delete(h.confId); removidos.push(h);
   }
+  if(removidos.length) registrarLog('Histórico','Excluir',removidos.length+' registro(s) do histórico: '+removidos.slice(0,8).map(h=>histDisplayId(h)).join(', ')+(removidos.length>8?' e mais '+(removidos.length-8):''), removidos.length<=40?removidos:removidos.map(h=>h.confId));
   const card=document.getElementById('histDetalheCard');
   if(card && !state.historico.some(h=>card.dataset&&card.dataset.id===h.confId)) { card.style.display='none'; }
   renderHistorico(); renderRepInfoPanel();
@@ -2680,6 +2706,7 @@ async function salvarMapeamentoEditado(antigo, novoLido, codigoMed){
   }
   renderMapeamentoTable();
   mostrarToast('✅ Código salvo.');
+  registrarLog('Códigos', antigo?'Alterar':'Criar', 'Código lido '+novoLido+(antigo&&antigo!==novoLido?' (antes: '+antigo+')':'')+' → medicamento '+codigoMed, {antigo:antigo||null, codigoLido:novoLido, codigoMedicamento:codigoMed});
   return true;
 }
 function renderVinculosTable(){ renderLotesConhecidosTable(); }   // os vínculos agora aparecem na lista única de lotes
@@ -2746,6 +2773,7 @@ async function salvarVinculoEditado(keyAntigo, fDig, iDig, validade){
       for(const [k,l] of conhAlt){ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(l.__nk)).set(state.lotesConhecidos[l.__nk]); await dbApi.doc('lotesConhecidos/'+encodeURIComponent(k)).delete(); }
     }
     mostrarToast('✅ Vínculo atualizado.');
+    registrarLog('Vínculos','Alterar','Vínculo '+old.loteFornecedor+' ↔ '+old.loteInstitucional+' → '+F+' ↔ '+I, {antes:old, depois:rec});
   }catch(err){ console.error(err); mostrarToast('⚠️ Não foi possível sincronizar a alteração.', 'erro'); }
   renderAll(); renderVinculosTable();
   return true;
@@ -2836,6 +2864,134 @@ function renderAuditoriaCadastros(){
   resumo.innerHTML=rows.length ? '<b>'+rows.length+' possível(is) inconsistência(s)</b>. Revise antes de remover.' : '✅ Nenhum cadastro claramente fora do padrão foi encontrado.';
   tbody.innerHTML=rows.map((r,i)=>'<tr><td><span class="badge '+(r.acao==='normalizar'?'warn':'danger')+'">'+esc(r.tipo)+'</span></td><td>'+esc(r.origem)+'</td><td><b>'+esc(r.nome||'—')+'</b><div class="muted">Código '+esc(r.codigo||'—')+'</div></td><td>'+esc(r.motivo)+'</td><td><button class="btn '+(r.acao==='normalizar'?'secondary':'danger')+' btnAcaoAuditoria" data-index="'+i+'" style="padding:5px 9px;">'+(r.acao==='normalizar'?'Padronizar nome':'Excluir suspeito')+'</button></td></tr>').join('') || '<tr><td colspan="5" class="muted">Nenhuma inconsistência clara encontrada.</td></tr>';
   window.__auditoriaRows=rows;
+  try{ renderVerificacoesAuditoria(); renderLogAuditoria(); }catch(e){ console.error(e); }
+}
+/* ---------------- Trilha de auditoria (quem fez o quê) ---------------- */
+function escLog(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function quemAgora(){
+  const u=usuarioAtual();
+  return {usuarioId:state.usuarioId||null, usuarioNome:u?(u.nome||''):'(sem usuário selecionado)', matricula:u?(u.matricula||''):''};
+}
+function registrarLog(area, acao, resumo, detalhe, quemFixo){
+  try{
+    const agora=new Date(); const q=quemFixo||quemAgora();
+    const rec={id:'LOG-'+agora.getTime()+'-'+Math.random().toString(36).slice(2,6), area:area, acao:acao, resumo:String(resumo||'').slice(0,500), usuarioId:q.usuarioId, usuarioNome:q.usuarioNome, matricula:q.matricula, data:dataLocalISO(agora), hora:String(agora.getHours()).padStart(2,'0')+':'+String(agora.getMinutes()).padStart(2,'0'), criadoEm:agora.toISOString()};
+    if(detalhe!==undefined){
+      let t=''; try{ t=JSON.stringify(detalhe); }catch(e){ t=''; }
+      if(t.length>150000) t=JSON.stringify({truncado:true, tamanhoOriginal:t.length});
+      if(t) rec.detalhe=t;
+    }
+    if(!dbApi){ state.logAuditoria=[rec].concat(state.logAuditoria||[]); renderLogAuditoria(); return; }
+    Promise.resolve().then(()=>dbApi.doc('logAuditoria/'+rec.id).set(rec)).then(()=>{ state.logFalhou=false; }).catch(e=>{
+      console.error('Falha ao gravar o registro de ações', e);
+      state.logFalhou=true; state.logFalhos=[rec].concat(state.logFalhos||[]).slice(0,100); renderLogAuditoria();
+    });
+  }catch(e){ console.error('registrarLog', e); }
+}
+function subscribeLogAuditoria(){
+  try{
+    dbApi.collection('logAuditoria').orderBy('criadoEm','desc').limit(300).onSnapshot(snap=>{ state.logAuditoria=snap.docs.map(d=>d.data()); renderLogAuditoria(); }, err=>{ console.error(err); state.logFalhou=true; renderLogAuditoria(); });
+  }catch(e){ console.error(e); }
+}
+function listaLogAuditoria(){
+  const base=state.logAuditoria||[];
+  const falhos=(state.logFalhos||[]).filter(f=>!base.some(b=>b.id===f.id)).map(f=>Object.assign({}, f, {__falhou:true}));
+  return falhos.concat(base).sort((a,b)=>String(b.criadoEm).localeCompare(String(a.criadoEm))).slice(0,300);
+}
+function renderLogAuditoria(){
+  const tb=document.querySelector('#audLogTable tbody'); if(!tb) return;
+  const lista=listaLogAuditoria(); window.__logRows=lista;
+  const av=document.getElementById('audLogAviso');
+  if(av) av.innerHTML=state.logFalhou?'<div class="banner">⚠️ O registro não foi gravado no banco. Verifique as regras do Firestore para a coleção <b>logAuditoria</b>.</div>':'';
+  const rs=document.getElementById('audLogResumo'); if(rs) rs.textContent=lista.length?'('+lista.length+')':'';
+  tb.innerHTML=lista.map((r,i)=>'<tr><td>'+escLog(r.data?fmtDateBR(r.data):'')+' '+escLog(r.hora||'')+(r.__falhou?'<div class="muted">não sincronizou</div>':'')+'</td>'+
+    '<td><b>'+escLog(r.usuarioNome||'—')+'</b>'+(r.matricula?'<div class="muted">'+escLog(r.matricula)+'</div>':'')+'</td>'+
+    '<td><span class="badge '+(r.acao==='Excluir'?'danger':(r.acao==='Alterar'?'warn':'grey'))+'">'+escLog(r.acao)+'</span><div class="muted">'+escLog(r.area)+'</div></td>'+
+    '<td>'+escLog(r.resumo)+(r.detalhe?'<div><button class="btn secondary btnVerLog" data-i="'+i+'" style="padding:3px 8px;margin-top:4px;">Ver dados</button></div>':'')+'</td></tr>').join('')||'<tr><td colspan="4" class="muted">Nenhum registro ainda.</td></tr>';
+}
+
+/* ---------------- Verificações adicionais (somente leitura) ---------------- */
+const AUD_REV_KEY='psi_auditoriaRevisados';
+const uiAud={limite:40};
+function audRevisados(){ try{ return new Set(JSON.parse(localStorage.getItem(AUD_REV_KEY)||'[]')); }catch(e){ return new Set(); } }
+function audSalvarRevisados(set){ try{ localStorage.setItem(AUD_REV_KEY, JSON.stringify(Array.from(set).slice(-500))); }catch(e){} }
+function analisarVerificacoesExtras(){
+  const out=[]; const agora=new Date(); const anoMax=agora.getFullYear()+10;
+  const add=(o)=>out.push(o);
+  Object.entries(state.referencia||{}).forEach(([cid,c])=>{
+    (c.itens||[]).forEach(it=>{
+      const nome=it.medicamento||'—', cod=String(it.codigo||'');
+      const lotes=(it.lotes||[]).filter(l=>l&&(l.loteFornecedor||l.loteInstitucional||l.validade));
+      lotes.forEach(l=>{
+        const lote=l.loteInstitucional||l.loteFornecedor||'sem lote';
+        const base={cid:cid, codigo:cod, origem:c.nome, nome:nome, abrir:'cadastro'};
+        if(!l.validade) add(Object.assign({id:'semval|'+cid+'|'+cod+'|'+lote, grav:'alta', tipo:'Sem validade', motivo:'Lote '+lote+' está sem validade.'}, base));
+        else { const y=Number(String(l.validade).slice(0,4)); if(!(y>=2000 && y<=anoMax)) add(Object.assign({id:'valsusp|'+cid+'|'+cod+'|'+lote, grav:'media', tipo:'Validade suspeita', motivo:'Lote '+lote+' com validade '+l.validade+'.'}, base)); }
+        if(!l.loteFornecedor && !l.loteInstitucional) add(Object.assign({id:'semlote|'+cid+'|'+cod+'|'+l.validade, grav:'media', tipo:'Validade sem lote', motivo:'Há validade '+l.validade+' sem nenhum lote.'}, base));
+        else if(!l.loteFornecedor || !l.loteInstitucional) add(Object.assign({id:'incomp|'+cid+'|'+cod+'|'+lote, grav:'baixa', tipo:'Lote incompleto', motivo:'Só há o lote '+(l.loteFornecedor?'fornecedor':'Einstein')+' ('+lote+').'}, base));
+      });
+      if(lotes.length){
+        const soma=lotes.reduce((t,l)=>t+(Number(loteMaxEfetivo(it,l))||0),0); const prev=Number(it.qtde||0);
+        const base={cid:cid, codigo:cod, origem:c.nome, nome:nome, abrir:'cadastro'};
+        if(soma>prev) add(Object.assign({id:'somaMais|'+cid+'|'+cod, grav:'alta', tipo:'Soma maior que o previsto', motivo:'Lotes somam '+soma+' e o previsto é '+prev+'.'}, base));
+        else if(soma<prev) add(Object.assign({id:'somaMenos|'+cid+'|'+cod, grav:'baixa', tipo:'Soma menor que o previsto', motivo:'Lotes somam '+soma+' e o previsto é '+prev+'.'}, base));
+      }
+    });
+  });
+  const porF={}, porI={};
+  Object.values(state.mapaLotesGlobais||{}).forEach(m=>{
+    const f=canonLoteComparacao(m.loteFornecedor), i=canonLoteComparacao(m.loteInstitucional);
+    if(f) (porF[f]=porF[f]||[]).push(m);
+    if(i) (porI[i]=porI[i]||[]).push(m);
+  });
+  Object.entries(porF).forEach(([f,arr])=>{ const outros=new Set(arr.map(m=>canonLoteComparacao(m.loteInstitucional))); if(outros.size>1) add({id:'vincF|'+f, grav:'alta', tipo:'Vínculo conflitante', origem:'Lotes e vínculos', nome:'Fornecedor '+arr[0].loteFornecedor, codigo:'', motivo:'Ligado a mais de um lote Einstein: '+arr.map(m=>m.loteInstitucional).join(', ')+'.', abrir:'vinculos'}); });
+  Object.entries(porI).forEach(([i,arr])=>{ const outros=new Set(arr.map(m=>canonLoteComparacao(m.loteFornecedor))); if(outros.size>1) add({id:'vincI|'+i, grav:'alta', tipo:'Vínculo conflitante', origem:'Lotes e vínculos', nome:'Einstein '+arr[0].loteInstitucional, codigo:'', motivo:'Ligado a mais de um lote fornecedor: '+arr.map(m=>m.loteFornecedor).join(', ')+'.', abrir:'vinculos'}); });
+  (state.lacres||[]).filter(r=>!lacSegundoOk(r)).forEach(r=>{
+    const t=new Date(r.cheque1Em||(r.data?r.data+'T'+(r.hora||'00:00'):'')); if(isNaN(t)) return;
+    const h=(agora.getTime()-t.getTime())/3600000; if(h<24) return;
+    add({id:'lac|'+r.id, grav:h>=72?'alta':'media', tipo:'Lacre sem 2º cheque', origem:r.caixaNome||'Lacres', nome:'Lacres '+(r.lacre1||r.lacreRetirado||'')+' / '+(r.lacre2||r.lacreNovo||''), codigo:'', motivo:'Aguardando há '+Math.floor(h/24)+' dia(s).', abrir:'lacres'});
+  });
+  CAIXAS.forEach(c=>{
+    const st=(state.statusCaixas||{})[c.id]; if(!st || ['pronta','em_uso'].indexOf(st.status)>=0 || !st.atualizadoEm) return;
+    const t=new Date(st.atualizadoEm); if(isNaN(t)) return;
+    const h=(agora.getTime()-t.getTime())/3600000; if(h<24) return;
+    const opt=STATUS_OPTIONS.find(o=>o.id===st.status);
+    add({id:'stat|'+c.id+'|'+st.status, grav:h>=72?'alta':'media', tipo:'Caixa parada no status', origem:(state.referencia[c.id]&&state.referencia[c.id].nome)||c.nome, nome:opt?opt.label:st.status, codigo:'', motivo:'Sem mudança há '+Math.floor(h/24)+' dia(s).', abrir:'status'});
+  });
+  (state.historico||[]).forEach(h=>{
+    const t=h.criadoEm?new Date(h.criadoEm):null; if(!t||isNaN(t)) return;
+    if(t.getTime()>agora.getTime()+3600000){ add({id:'hfut|'+h.confId, grav:'alta', tipo:'Data futura no histórico', origem:h.caixaNome||'Histórico', nome:histDisplayId(h), codigo:'', motivo:'Registro com horário no futuro.', abrir:'historico', confId:h.confId}); return; }
+    const m=String(h.data||'').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if(m){ const iso=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); if(iso!==dataLocalISO(t)) add({id:'hdata|'+h.confId, grav:'media', tipo:'Data suspeita no histórico', origem:h.caixaNome||'Histórico', nome:histDisplayId(h), codigo:'', motivo:'Data gravada ('+m[0]+') difere do horário de início; pode ser o erro de fuso antigo.', abrir:'historico', confId:h.confId}); }
+  });
+  const peso={alta:0, media:1, baixa:2};
+  out.sort((a,b)=>peso[a.grav]-peso[b.grav]);
+  return out;
+}
+function renderVerificacoesAuditoria(){
+  const tb=document.querySelector('#audVerifTable tbody'); if(!tb) return;
+  const todos=analisarVerificacoesExtras(); const rev=audRevisados();
+  const mostrarRev=!!(document.getElementById('audMostrarRev')||{}).checked;
+  const abertos=todos.filter(r=>!rev.has(r.id));
+  const lista=mostrarRev?todos:abertos;
+  window.__verifRows=lista;
+  const rs=document.getElementById('audVerifResumo');
+  if(rs){ const n=(g)=>abertos.filter(r=>r.grav===g).length; rs.textContent=abertos.length?'('+abertos.length+': '+n('alta')+' alta, '+n('media')+' média, '+n('baixa')+' baixa)':'(nada pendente)'; }
+  const rotulo={alta:'Alta', media:'Média', baixa:'Baixa'};
+  const vis=lista.slice(0,uiAud.limite);
+  tb.innerHTML=vis.map((r,i)=>'<tr'+(rev.has(r.id)?' class="aud-rev"':'')+'><td><span class="badge g-'+r.grav+'">'+rotulo[r.grav]+'</span></td>'+
+    '<td>'+escLog(r.origem)+'</td>'+
+    '<td><b>'+escLog(r.tipo)+'</b><div>'+escLog(r.nome||'')+(r.codigo?' <span class="muted">('+escLog(r.codigo)+')</span>':'')+'</div><div class="muted">'+escLog(r.motivo)+'</div></td>'+
+    '<td><div class="flex"><button class="btn secondary btnAbrirVerif" data-i="'+i+'" style="padding:4px 9px;">Abrir</button><button class="btn secondary btnRevVerif" data-i="'+i+'" style="padding:4px 9px;">'+(rev.has(r.id)?'Reabrir':'Revisado')+'</button></div></td></tr>').join('')+
+    (lista.length>vis.length?'<tr><td colspan="4"><button class="btn secondary" id="btnMaisVerif">Mostrar mais ('+(lista.length-vis.length)+')</button></td></tr>':'')||
+    '<tr><td colspan="4" class="muted">✅ Nenhuma verificação pendente.</td></tr>';
+}
+async function abrirAchadoVerif(r){
+  if(r.abrir==='cadastro'){ await irParaCaixaNoCadastro(r.cid, r.codigo); }
+  else if(r.abrir==='vinculos'){ if(await switchTab('mapeamento')===false) return; uiMap.aba='lotes'; aplicarAbaMapeamento(); }
+  else if(r.abrir==='lacres'){ await switchTab('lacres'); }
+  else if(r.abrir==='status'){ await switchTab('status'); }
+  else if(r.abrir==='historico'){ if(await switchTab('historico')===false) return; renderHistDetalhe(r.confId); }
 }
 async function salvarReferenciaAuditada(cid){
   const c=state.referencia[cid];
@@ -3134,7 +3290,9 @@ document.querySelector('#lacresTable tbody').addEventListener('click', async (e)
   const ok=await confirmarEstilizado('Excluir registro de lacre?','<div class="muted">Excluir o registro de <b>'+esc(r.data?fmtDateBR(r.data):'')+' '+esc(r.hora||'')+'</b> ('+esc(r.caixaNome||'')+', '+esc(r.nome||'')+')? Essa ação não pode ser desfeita.</div>','Excluir','Cancelar');
   if(!ok) return;
   state.lacres=state.lacres.filter(x=>x.id!==r.id); renderLacres();
-  if(dbApi){ try{ await dbApi.doc('lacres/'+r.id).delete(); }catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.','erro'); } }
+  let okDelLac=true;
+  if(dbApi){ try{ await dbApi.doc('lacres/'+r.id).delete(); }catch(err){ okDelLac=false; console.error(err); mostrarToast('⚠️ Não sincronizou agora.','erro'); } }
+  if(okDelLac) registrarLog('Lacres','Excluir','Lacre de '+(r.data?fmtDateBR(r.data):'')+' '+(r.hora||'')+' · '+(r.caixaNome||'')+' · '+(r.nome||''), r);
 });
 function subscribeLacres(){ dbApi.collection('lacres').orderBy('criadoEm','desc').limit(500).onSnapshot(snap=>{ state.lacres=snap.docs.map(d=>d.data()); renderLacres(); }, err=>console.error(err)); }
 
@@ -3593,6 +3751,7 @@ setTimeout(()=>corrigirLotesClassificadosErrado().catch(console.error), 2500);
       subscribeStatusCaixas();
       subscribeEmUso();
       subscribeLacres();
+      subscribeLogAuditoria();
     } catch(e){
       console.error(e);
       document.getElementById('dbBanner').innerHTML = '<div class="banner">Não foi possível conectar ao banco compartilhado agora (verifique a conexão com a internet). Trabalhando em modo local nesta sessão.</div>';
@@ -3789,12 +3948,14 @@ document.querySelector('#usuariosTable tbody').addEventListener('click', async (
   const btn = e.target.closest('.btnDelUsuario');
   if (!btn) return;
   const id = btn.dataset.id;
-  const u = state.usuarios[id];
+  const u = state.usuarios[id]; const quemLog = quemAgora();
   if (!await confirmarEstilizado('Excluir usuário?', '<div class="muted">Excluir <b>'+esc(u?u.nome:id)+'</b>? O histórico já registrado será mantido.</div>', 'Excluir', 'Cancelar')) return;
   delete state.usuarios[id];
   if (state.usuarioId===id){ state.usuarioId=null; saveLocalPrefs(); }
   renderUsuariosTable(); fillUsuarioSelect();
-  if (dbApi){ try{ await dbApi.doc('usuarios/'+id).delete(); } catch(e){ console.error(e); } }
+  let okDelUsr=true;
+  if (dbApi){ try{ await dbApi.doc('usuarios/'+id).delete(); } catch(e){ okDelUsr=false; console.error(e); } }
+  if (okDelUsr) registrarLog('Usuários','Excluir','Usuário '+(u?u.nome:id), u||{id:id}, quemLog);
 });
 
 document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>{
@@ -3808,9 +3969,12 @@ document.querySelector('#mapaTable tbody').addEventListener('click', async (e)=>
   }
   if (btnDel){
     const codigo = btnDel.dataset.codigo;
+    const antesMap = state.mapeamentos[codigo];
     delete state.mapeamentos[codigo];
     renderMapeamentoTable();
-    if (dbApi){ try{ await dbApi.doc('mapeamentos/'+encodeURIComponent(codigo)).delete(); } catch(e){ console.error(e); } }
+    let okDelMap=true;
+    if (dbApi){ try{ await dbApi.doc('mapeamentos/'+encodeURIComponent(codigo)).delete(); } catch(e){ okDelMap=false; console.error(e); } }
+    if (okDelMap) registrarLog('Códigos','Excluir','Código lido '+codigo, Object.assign({chave:codigo}, antesMap||{}));
   } else if (btnEdit){
     const codigo = btnEdit.dataset.codigo;
     await editarMapeamento(codigo);
@@ -3828,7 +3992,8 @@ async function aoClicarVinculo(e){
     if (!ok) return;
     delete state.mapaLotesGlobais[key];
     renderVinculosTable();
-    if (dbApi){ try{ await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(key)).delete(); mostrarToast('Vínculo removido.'); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
+    if (dbApi){ try{ await dbApi.doc('mapaLotesGlobais/'+encodeURIComponent(key)).delete(); mostrarToast('Vínculo removido.'); registrarLog('Vínculos','Excluir','Vínculo '+m.loteFornecedor+' ↔ '+m.loteInstitucional, m); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
+    else registrarLog('Vínculos','Excluir','Vínculo '+m.loteFornecedor+' ↔ '+m.loteInstitucional, m);
   }
 }
 document.querySelector('#lotesTable tbody').addEventListener('click', aoClicarVinculo);
@@ -3882,6 +4047,7 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
       } else if(loteFornecedor&&loteInstitucional) await garantirVinculoGlobalConfirmado(codigoNovo,loteFornecedor,loteInstitucional,validade,'Você informou os dois lotes juntos nesta linha.');
       await propagarComplementoLote(codigoNovo,loteFornecedor,loteInstitucional,validade);
       mostrarToast('✅ Lote e validade atualizados.');
+      registrarLog('Lotes','Alterar','Lote aprendido '+(old.loteFornecedor||'—')+' / '+(old.loteInstitucional||'—')+' → '+(loteFornecedor||'—')+' / '+(loteInstitucional||'—'), {antes:old, depois:rec});
     }catch(err){ console.error(err); mostrarToast('⚠️ Não foi possível sincronizar a alteração.', 'erro'); }
     return;
   }
@@ -3889,9 +4055,12 @@ document.querySelector('#lotesTable tbody').addEventListener('click', async (e)=
     const key = btnDel.dataset.key;
     const ok=await confirmarEstilizado('Excluir lote aprendido?', '<div class="muted">O registro aprendido será removido. Isso não apaga automaticamente lotes já existentes no cadastro das caixas.</div>', 'Excluir', 'Cancelar');
     if(!ok) return;
+    const antesLote = state.lotesConhecidos[key];
     delete state.lotesConhecidos[key];
     renderLotesConhecidosTable();
-    if (dbApi){ try{ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).delete(); mostrarToast('Registro removido.'); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
+    const resLote = 'Lote aprendido '+(antesLote?((antesLote.loteFornecedor||'—')+' / '+(antesLote.loteInstitucional||'—')):key);
+    if (dbApi){ try{ await dbApi.doc('lotesConhecidos/'+encodeURIComponent(key)).delete(); mostrarToast('Registro removido.'); registrarLog('Lotes','Excluir',resLote, Object.assign({chave:key}, antesLote||{})); } catch(err){ console.error(err); mostrarToast('⚠️ Não sincronizou agora.', 'erro'); } }
+    else registrarLog('Lotes','Excluir',resLote, Object.assign({chave:key}, antesLote||{}));
   }
 });
 
@@ -3903,22 +4072,46 @@ document.querySelector('#auditoriaTable tbody').addEventListener('click', async 
     const ok=await confirmarEstilizado('Padronizar nome?', '<div class="muted">Na caixa <b>'+esc(r.origem)+'</b>, alterar <b>'+esc(r.nome)+'</b> para <b>'+esc(r.padrao)+'</b>? Código e lotes não serão alterados.</div>', 'Padronizar', 'Cancelar');
     if(!ok) return;
     state.referencia[r.cid].itens[r.idx].medicamento=r.padrao;
-    try{ await salvarReferenciaAuditada(r.cid); renderAll(); mostrarToast('✅ Nome padronizado.'); }catch(err){ console.error(err); mostrarToast('Não foi possível sincronizar.', 'erro'); }
+    try{ await salvarReferenciaAuditada(r.cid); renderAll(); mostrarToast('✅ Nome padronizado.'); registrarLog('Auditoria','Alterar','Nome padronizado em '+r.origem+': '+r.nome+' → '+r.padrao, {caixaId:r.cid, codigo:r.codigo, antes:r.nome, depois:r.padrao}); }catch(err){ console.error(err); mostrarToast('Não foi possível sincronizar.', 'erro'); }
     return;
   }
   const ok=await confirmarEstilizado('Excluir cadastro suspeito?', '<div class="muted">Você está excluindo <b>'+esc(r.nome||r.codigo)+'</b> de <b>'+esc(r.origem)+'</b>.<br><br>Motivo identificado: '+esc(r.motivo)+'.<br><br>O histórico já salvo não será apagado.</div>', 'Excluir', 'Cancelar');
   if(!ok) return;
   try{
+    let removido=null;
     if(r.tipo==='medicamento'){
+      removido={caixaId:r.cid, item:state.referencia[r.cid].itens[r.idx]};
       state.referencia[r.cid].itens.splice(r.idx,1); await salvarReferenciaAuditada(r.cid);
     }else if(r.tipo==='mapeamento'){
+      removido=Object.assign({chave:r.key}, state.mapeamentos[r.key]||{});
       delete state.mapeamentos[r.key]; if(dbApi) await dbApi.doc('mapeamentos/'+encodeURIComponent(r.key)).delete();
     }else if(r.tipo==='lote'){
+      removido=Object.assign({chave:r.key}, state.lotesConhecidos[r.key]||{});
       delete state.lotesConhecidos[r.key]; if(dbApi) await dbApi.doc('lotesConhecidos/'+encodeURIComponent(r.key)).delete();
     }
     renderAll(); mostrarToast('✅ Cadastro suspeito removido.');
+    registrarLog('Auditoria','Excluir','Suspeito removido ('+r.tipo+') de '+r.origem+': '+(r.nome||r.codigo)+' · '+r.motivo, removido);
   }catch(err){ console.error(err); mostrarToast('Não foi possível sincronizar.', 'erro'); }
 });
+
+document.querySelector('#audVerifTable tbody').addEventListener('click', async e=>{
+  if(e.target.closest('#btnMaisVerif')){ uiAud.limite+=40; renderVerificacoesAuditoria(); return; }
+  const ab=e.target.closest('.btnAbrirVerif'), rv=e.target.closest('.btnRevVerif');
+  const btn=ab||rv; if(!btn) return;
+  const r=(window.__verifRows||[])[Number(btn.dataset.i)]; if(!r) return;
+  if(ab){ await abrirAchadoVerif(r); return; }
+  const set=audRevisados(); if(set.has(r.id)) set.delete(r.id); else set.add(r.id);
+  audSalvarRevisados(set); renderVerificacoesAuditoria();
+});
+document.getElementById('audMostrarRev').addEventListener('change', renderVerificacoesAuditoria);
+document.querySelector('#audLogTable tbody').addEventListener('click', async e=>{
+  const btn=e.target.closest('.btnVerLog'); if(!btn) return;
+  const r=(window.__logRows||[])[Number(btn.dataset.i)]; if(!r||!r.detalhe) return;
+  let txt=r.detalhe; try{ txt=JSON.stringify(JSON.parse(r.detalhe),null,2); }catch(err){}
+  const ok=await confirmarEstilizado('Dados do registro','<div class="muted">'+escLog(r.acao)+' · '+escLog(r.area)+' · '+escLog(r.usuarioNome||'')+'</div><pre class="aud-pre">'+escLog(txt)+'</pre>','Copiar','Fechar');
+  if(ok){ try{ await navigator.clipboard.writeText(txt); mostrarToast('Copiado.'); }catch(err){ mostrarToast('Não foi possível copiar.','erro'); } }
+});
+document.getElementById('btnBaixarLog').addEventListener('click', ()=>{ baixarArquivo('registro-de-acoes-'+dataLocalISO(new Date())+'.json', JSON.stringify(listaLogAuditoria(),null,2), 'application/json'); });
 
 function baixarArquivo(nome, conteudo, tipo){
   const blob = new Blob([conteudo], {type:tipo});
@@ -3933,12 +4126,12 @@ function csvEscape(v){
   return '"' + s.replace(/"/g,'""') + '"';
 }
 document.getElementById('btnExportarCsv').addEventListener('click', ()=>{
-  const linhas = [['ID curto','ID técnico','Tipo','Data','Hora','Caixa','Responsável','Matrícula','Código','Medicamento','Qtd esperada','Qtd bipada','Lote fornecedor','Lote institucional','Validade','Resultado','Tipo divergência','Ação'].map(csvEscape).join(';')];
+  const linhas = [['ID curto','ID técnico','Tipo','Data','Hora','Caixa','Responsável','Matrícula','Código','Medicamento','Qtd esperada','Qtd bipada','Lote fornecedor','Lote institucional','Validade','Resultado','Tipo divergência','Ação','Qtd no lote'].map(csvEscape).join(';')];
   state.historico.forEach(h=>{
     h.itens.forEach(it=>{
       const lotes = (it.lotesBipados&&it.lotesBipados.length) ? it.lotesBipados : [{loteFornecedor:'',loteInstitucional:'',validade:''}];
       lotes.forEach(l=>{
-        linhas.push([histDisplayId(h),h.confId,h.tipo,h.data,h.hora,h.caixaNome,h.responsavelNome,h.responsavelMatricula,it.codigo,it.medicamento,it.qtdEsperada,it.qtdBipada,l.loteFornecedor,l.loteInstitucional,l.validade?fmtDateBR(l.validade):'',it.resultado,it.tipoDivergencia,it.acao].map(csvEscape).join(';'));
+        linhas.push([histDisplayId(h),h.confId,h.tipo,h.data,h.hora,h.caixaNome,h.responsavelNome,h.responsavelMatricula,it.codigo,it.medicamento,it.qtdEsperada,it.qtdBipada,l.loteFornecedor,l.loteInstitucional,l.validade?fmtDateBR(l.validade):'',it.resultado,it.tipoDivergencia,it.acao,(l.qtd===undefined||l.qtd===null)?'':l.qtd].map(csvEscape).join(';'));
       });
     });
   });
