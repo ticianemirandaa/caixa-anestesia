@@ -239,6 +239,26 @@ details.filtros-box[open]{padding-bottom:10px;}
 details.filtros-box>summary,details.menu-exp>summary{cursor:pointer; font-weight:700; padding:9px 0; font-size:15px;}
 details.menu-exp{display:inline-block; vertical-align:top;}
 details.menu-exp[open]{display:block; flex-basis:100%;}
+/* cadastro: cartões recolhíveis */
+.cad-toolbar{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; align-items:center;}
+.cad-acoes{position:sticky; bottom:0; background:var(--panel); padding:10px 0; margin-top:10px; border-top:1px solid var(--border); z-index:5;}
+details.itemcard{padding:0; overflow:hidden;}
+details.itemcard.cad-alerta{border-left:4px solid var(--warn);}
+details.itemcard>summary{list-style:none; cursor:pointer; display:flex; align-items:flex-start; gap:10px; padding:10px 12px;}
+details.itemcard>summary::-webkit-details-marker{display:none;}
+details.itemcard .it-head-txt{flex:1; min-width:0;}
+details.itemcard .it-arrow::after{content:'▸'; color:var(--muted); font-size:16px;}
+details.itemcard[open] .it-arrow::after{content:'▾';}
+details.itemcard[open]>summary{border-bottom:1px solid var(--border); background:var(--grey-bg);}
+.sum-cod{font-weight:700; color:var(--primary-dark); margin-right:8px;}
+.sum-nome{font-weight:600; overflow-wrap:anywhere;}
+.sum-pri{font-size:12.5px; color:var(--muted); margin-top:1px;}
+.sum-chips{margin-top:2px;}
+.cad-chip{display:inline-block; font-size:12px; font-weight:600; padding:2px 8px; border-radius:999px; background:var(--grey-bg); color:var(--muted); margin:4px 6px 0 0;}
+.cad-chip.ok{background:var(--ok-bg); color:var(--ok);}
+.cad-chip.warn{background:var(--warn-bg); color:var(--warn);}
+.cad-chip.danger{background:var(--danger-bg); color:var(--danger);}
+details.itemcard .it-body{padding:10px 12px 12px;}
 details.aud-box>summary{cursor:pointer; font-weight:700; padding:8px 0; font-size:16px;}
 .badge.g-alta{background:var(--danger-bg); color:var(--danger);}
 .badge.g-media{background:var(--orange-bg); color:var(--orange);}
@@ -368,8 +388,14 @@ tr.aud-rev td{opacity:.55;}
       <h2 id="cadastroTitulo">Cadastro esperado da caixa</h2>
       <div class="row" style="margin-bottom:12px;"><label class="muted">Nome desta caixa</label><input type="text" id="nomeCaixaInput" class="small-input"></div>
       <div class="scan-box"><input type="text" id="cadastroScanInput" placeholder="Bipe para localizar ou já criar um item novo com esse código…" autocomplete="off"></div>
+      <div class="cad-toolbar">
+        <input type="text" id="cadastroBusca" placeholder="🔎 Filtrar por código, medicamento ou princípio ativo" style="flex:1;min-width:200px;">
+        <button class="btn secondary" id="btnExpandirCad" style="padding:6px 12px;">Expandir todos</button>
+        <button class="btn secondary" id="btnRecolherCad" style="padding:6px 12px;">Recolher todos</button>
+      </div>
+      <div class="muted" id="cadastroResumo" style="margin-bottom:8px;"></div>
       <div id="cadastroList"></div>
-      <div class="flex" style="margin-top:10px;">
+      <div class="flex cad-acoes">
         <button class="btn secondary" id="btnAddItem">+ Adicionar medicamento</button>
         <button class="btn secondary" id="btnReimportarPlanilha">🔄 Reimportar desta planilha</button>
         <button class="btn" id="btnSalvarCadastro">Salvar cadastro desta caixa</button>
@@ -544,12 +570,22 @@ tr.aud-rev td{opacity:.55;}
         <button class="btn secondary" id="btnReanalisarCadastros">Reanalisar</button>
       </div>
       <div id="auditoriaResumo" class="muted" style="margin-bottom:10px;"></div>
+      <div class="flex" style="margin-bottom:10px;">
+        <input type="text" id="audBusca" placeholder="🔎 Filtrar por caixa, medicamento, código ou motivo" style="flex:1;min-width:200px;">
+        <select id="audFiltroTipo"><option value="">Todos os tipos</option></select>
+      </div>
       <div class="table-wrap">
         <table id="auditoriaTable"><thead><tr><th>Tipo</th><th>Caixa / origem</th><th>Cadastro encontrado</th><th>Motivo</th><th>Ação</th></tr></thead><tbody></tbody></table>
       </div>
       <details class="aud-box" id="audVerifBox" open style="margin-top:16px;">
         <summary>Verificações adicionais <span class="muted" id="audVerifResumo"></span></summary>
         <div class="muted" style="margin:2px 0 8px;">Só sugerem: nada é apagado ou alterado por aqui. “Revisado” vale só neste aparelho.</div>
+        <div class="flex" style="margin-bottom:8px;">
+          <select id="audFGrav"><option value="">Todas as gravidades</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
+          <select id="audFTipo"><option value="">Todos os tipos</option></select>
+          <select id="audFOnde"><option value="">Todas as caixas/origens</option></select>
+          <button class="btn secondary" id="audFLimpar" style="padding:6px 12px;">Limpar filtros</button>
+        </div>
         <label class="muted" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><input type="checkbox" id="audMostrarRev"> Mostrar revisados</label>
         <div class="table-wrap"><table id="audVerifTable"><thead><tr><th>Gravidade</th><th>Onde</th><th>O que foi encontrado</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
       </details>
@@ -1949,6 +1985,36 @@ function atualizarLimiteCard(card){
     btn.disabled=cheio||semEspaco;
     btn.textContent=cheio?'Limite atingido ('+Math.min(r.soma,r.Q)+'/'+r.Q+')':(semEspaco?'Preencha o lote vazio':'+ adicionar lote');
   }
+  atualizarCabecalhoCard(card); atualizarResumoCadastro();
+}
+function atualizarCabecalhoCard(card){
+  const ch=card.querySelector('.sum-chips'); if(!ch) return;
+  const cod=((card.querySelector('.it-codigo')||{}).value||'').trim(), nome=(card.querySelector('.it-medicamento')||{}).value||'';
+  const sc=card.querySelector('.sum-cod'), sn=card.querySelector('.sum-nome'), sp=card.querySelector('.sum-pri');
+  if(sc) sc.textContent=cod||'sem código'; if(sn) sn.textContent=nome;
+  if(sp) sp.textContent=card.dataset.pri||(typeof PRINCIPIO_ATIVO_PADRAO!=='undefined'?PRINCIPIO_ATIVO_PADRAO[cod]:'')||'';
+  const r=lerResumoCard(card); let inc=0, semVal=0;
+  r.rows.forEach(x=>{
+    const F=x.tr.querySelector('.li-fornecedor').value.trim(), I=x.tr.querySelector('.li-institucional').value.trim(), V=x.tr.querySelector('.li-validade').value;
+    if((F&&!I)||(!F&&I)) inc++;
+    if((F||I)&&!V) semVal++;
+  });
+  const cls=r.exc>0?'danger':((r.Q>0&&r.soma===r.Q)?'ok':'');
+  ch.innerHTML='<span class="cad-chip '+cls+'">Lotes '+r.soma+'/'+r.Q+'</span>'+(inc?'<span class="cad-chip warn">⚠️ '+inc+' lote(s) incompleto(s)</span>':'')+(semVal?'<span class="cad-chip danger">'+semVal+' sem validade</span>':'');
+  card.classList.toggle('cad-alerta', r.exc>0||semVal>0||inc>0);
+}
+function atualizarResumoCadastro(){
+  const el=document.getElementById('cadastroResumo'); if(!el) return;
+  const cards=document.querySelectorAll('#cadastroList > .itemcard');
+  const av=document.querySelectorAll('#cadastroList > .itemcard.cad-alerta').length;
+  el.textContent=cards.length?(cards.length+' medicamento(s)'+(av?' · '+av+' com aviso':' · tudo em ordem')):'';
+}
+function filtrarCadastro(){
+  const q=semAcentoMin((document.getElementById('cadastroBusca')||{}).value||'').trim();
+  document.querySelectorAll('#cadastroList > .itemcard').forEach(c=>{
+    const t=semAcentoMin(((c.querySelector('.it-codigo')||{}).value||'')+' '+((c.querySelector('.it-medicamento')||{}).value||'')+' '+((c.querySelector('.sum-pri')||{}).textContent||''));
+    c.style.display=(!q||t.includes(q))?'':'none';
+  });
 }
 function novoItemVazio(){
   return {codigo:null, medicamento:'NOVO MEDICAMENTO', qtde:1, lotes:[
@@ -1965,6 +2031,7 @@ function renderCadastroList(){
   // Exibe cada lote físico em uma única linha. Linhas complementares
   // (fornecedor em uma e institucional em outra) são consolidadas antes de renderizar.
   const itens = (currentCaixa().itens || []).map(item=>({...item,lotes:consolidarLotesDoItem(item.lotes)}));
+  const abertosIds = new Set(Array.from(wrap.querySelectorAll('details.itemcard[open]')).map(d=>d.id));
   wrap.innerHTML = itens.map((item,idx)=>{
     const avisoSoma = '<div class="muted li-resumo" style="margin-top:6px;font-weight:700;"></div>';
     const lotesHtml = (item.lotes||[]).map((l,li)=>
@@ -1975,23 +2042,32 @@ function renderCadastroList(){
         '<td><input class="li-qtdmax" type="number" min="0" value="'+esc(l.qtdeMax)+'" placeholder="máx." style="width:70px;"></td>' +
         '<td><button class="btn danger btnDelLote" data-idx="'+idx+'" data-li="'+li+'" style="padding:3px 8px;">✕</button></td>' +
       '</tr>').join('');
-    return '<div class="itemcard" id="itemcard-'+idx+'">' +
+    const pri=String(item.principioAtivo||'').trim();
+    return '<details class="itemcard" id="itemcard-'+idx+'" data-pri="'+escLog(pri)+'"'+(abertosIds.has('itemcard-'+idx)?' open':'')+'>' +
+      '<summary class="it-head"><div class="it-head-txt">' +
+        '<div><span class="sum-cod">'+escLog(item.codigo||'sem código')+'</span><span class="sum-nome">'+escLog(item.medicamento)+'</span></div>' +
+        '<div class="sum-pri"></div><div class="sum-chips"></div>' +
+      '</div><span class="it-arrow"></span></summary>' +
+      '<div class="it-body">' +
       '<div class="grid2" style="margin-bottom:8px;">' +
         '<div><label class="muted">Código do material</label><input class="it-codigo" type="text" value="'+esc(item.codigo)+'"></div>' +
         '<div><label class="muted">Quantidade esperada total</label><input class="it-qtde" type="number" value="'+item.qtde+'"></div>' +
       '</div>' +
       '<div style="margin-bottom:8px;"><label class="muted">Medicamento</label><input class="it-medicamento" type="text" value="'+esc(item.medicamento)+'"></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Qtd. máx. nesse lote</th><th></th></tr></thead><tbody>'+lotesHtml+'</tbody></table></div>' +
+      '<div class="table-wrap"><table><thead><tr><th>Lote fornecedor</th><th>Lote institucional</th><th>Validade</th><th>Qtd. no lote</th><th></th></tr></thead><tbody>'+lotesHtml+'</tbody></table></div>' +
       avisoSoma +
       '<div class="flex" style="margin-top:8px;"><button class="btn secondary btnAddLote" data-idx="'+idx+'">+ adicionar lote</button>' +
         '<button class="btn danger btnDelItem" data-idx="'+idx+'" style="margin-left:auto;">Excluir medicamento</button></div>' +
-    '</div>';
+      '</div></details>';
   }).join('') || '<div class="muted">Nenhum medicamento cadastrado nesta caixa.</div>';
   wrap.querySelectorAll('.itemcard').forEach(atualizarLimiteCard);
+  filtrarCadastro();
 }
 function highlightCadastroItem(idx){
   const el = document.getElementById('itemcard-'+idx);
   if (!el) return;
+  const fb=document.getElementById('cadastroBusca'); if(fb && fb.value){ fb.value=''; filtrarCadastro(); }
+  el.open=true;
   el.scrollIntoView({behavior:'smooth', block:'center'});
   el.classList.add('highlight');
   setTimeout(()=>el.classList.remove('highlight'), 2200);
@@ -2130,6 +2206,7 @@ document.getElementById('btnAddItem').addEventListener('click', ()=>{
   const itens = coletarFormularioCadastro();
   itens.push(novoItemVazio());
   currentCaixa().itens = itens; renderCadastroList();
+  const novoCard=document.getElementById('itemcard-'+(itens.length-1)); if(novoCard){ novoCard.open=true; novoCard.scrollIntoView({behavior:'smooth', block:'center'}); }
 });
 document.getElementById('btnReimportarPlanilha').addEventListener('click', async ()=>{
   const caixa = currentCaixa();
@@ -2925,8 +3002,11 @@ function renderAuditoriaCadastros(){
   const resumo=document.getElementById('auditoriaResumo');
   if(!tbody||!resumo) return;
   const rows=analisarCadastrosSuspeitos();
-  resumo.innerHTML=rows.length ? '<b>'+rows.length+' possível(is) inconsistência(s)</b>. Revise antes de remover.' : '✅ Nenhum cadastro claramente fora do padrão foi encontrado.';
-  tbody.innerHTML=rows.map((r,i)=>'<tr><td><span class="badge '+(r.acao==='normalizar'?'warn':'danger')+'">'+esc(r.tipo)+'</span></td><td>'+esc(r.origem)+'</td><td><b>'+esc(r.nome||'—')+'</b><div class="muted">Código '+esc(r.codigo||'—')+'</div></td><td>'+esc(r.motivo)+'</td><td><button class="btn '+(r.acao==='normalizar'?'secondary':'danger')+' btnAcaoAuditoria" data-index="'+i+'" style="padding:5px 9px;">'+(r.acao==='normalizar'?'Padronizar nome':'Excluir suspeito')+'</button></td></tr>').join('') || '<tr><td colspan="5" class="muted">Nenhuma inconsistência clara encontrada.</td></tr>';
+  preencherSelectAud('audFiltroTipo', Array.from(new Set(rows.map(r=>r.tipo))).sort(), 'Todos os tipos');
+  const fq=semAcentoMin((document.getElementById('audBusca')||{}).value||'').trim(), ft=(document.getElementById('audFiltroTipo')||{}).value||'';
+  const visiveis=rows.map((r,i)=>({r:r,i:i})).filter(x=>(!ft||x.r.tipo===ft)&&(!fq||semAcentoMin([x.r.tipo,x.r.origem,x.r.nome,x.r.codigo,x.r.motivo].join(' ')).includes(fq)));
+  resumo.innerHTML=rows.length ? '<b>'+rows.length+' possível(is) inconsistência(s)</b>'+(visiveis.length!==rows.length?' · mostrando '+visiveis.length:'')+'. Revise antes de remover.' : '✅ Nenhum cadastro claramente fora do padrão foi encontrado.';
+  tbody.innerHTML=visiveis.map(({r,i})=>'<tr><td><span class="badge '+(r.acao==='normalizar'?'warn':'danger')+'">'+esc(r.tipo)+'</span></td><td>'+esc(r.origem)+'</td><td><b>'+esc(r.nome||'—')+'</b><div class="muted">Código '+esc(r.codigo||'—')+'</div></td><td>'+esc(r.motivo)+'</td><td><button class="btn '+(r.acao==='normalizar'?'secondary':'danger')+' btnAcaoAuditoria" data-index="'+i+'" style="padding:5px 9px;">'+(r.acao==='normalizar'?'Padronizar nome':'Excluir suspeito')+'</button></td></tr>').join('') || '<tr><td colspan="5" class="muted">'+(rows.length?'Nenhum item neste filtro.':'Nenhuma inconsistência clara encontrada.')+'</td></tr>';
   window.__auditoriaRows=rows;
   try{ renderVerificacoesAuditoria(); renderLogAuditoria(); }catch(e){ console.error(e); }
 }
@@ -2992,7 +3072,7 @@ function analisarVerificacoesExtras(){
         if(!l.validade) add(Object.assign({id:'semval|'+cid+'|'+cod+'|'+lote, grav:'alta', tipo:'Sem validade', motivo:'Lote '+lote+' está sem validade.'}, base));
         else { const y=Number(String(l.validade).slice(0,4)); if(!(y>=2000 && y<=anoMax)) add(Object.assign({id:'valsusp|'+cid+'|'+cod+'|'+lote, grav:'media', tipo:'Validade suspeita', motivo:'Lote '+lote+' com validade '+l.validade+'.'}, base)); }
         if(!l.loteFornecedor && !l.loteInstitucional) add(Object.assign({id:'semlote|'+cid+'|'+cod+'|'+l.validade, grav:'media', tipo:'Validade sem lote', motivo:'Há validade '+l.validade+' sem nenhum lote.'}, base));
-        else if(!l.loteFornecedor || !l.loteInstitucional) add(Object.assign({id:'incomp|'+cid+'|'+cod+'|'+lote, grav:'baixa', tipo:'Lote incompleto', motivo:'Só há o lote '+(l.loteFornecedor?'fornecedor':'Einstein')+' ('+lote+').'}, base));
+        else if(!l.loteFornecedor || !l.loteInstitucional) add(Object.assign({id:'incomp|'+cid+'|'+cod+'|'+lote, grav:'media', tipo:'Lote incompleto', motivo:'Só há o lote '+(l.loteFornecedor?'fornecedor':'Einstein')+' ('+lote+').'}, base));
       });
       if(lotes.length){
         const soma=lotes.reduce((t,l)=>t+(Number(loteMaxEfetivo(it,l))||0),0); const prev=Number(it.qtde||0);
@@ -3029,18 +3109,30 @@ function analisarVerificacoesExtras(){
     if(m){ const iso=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); if(iso!==dataLocalISO(t)) add({id:'hdata|'+h.confId, grav:'media', tipo:'Data suspeita no histórico', origem:h.caixaNome||'Histórico', nome:histDisplayId(h), codigo:'', motivo:'Data gravada ('+m[0]+') difere do horário de início; pode ser o erro de fuso antigo.', abrir:'historico', confId:h.confId}); }
   });
   const peso={alta:0, media:1, baixa:2};
-  out.sort((a,b)=>peso[a.grav]-peso[b.grav]);
+  out.sort((a,b)=>(peso[a.grav]-peso[b.grav])||((a.tipo==='Lote incompleto'?1:0)-(b.tipo==='Lote incompleto'?1:0)));
   return out;
+}
+function preencherSelectAud(id, valores, rotuloTodos){
+  const el=document.getElementById(id); if(!el) return;
+  const atual=el.value; const chave=JSON.stringify(valores);
+  if(el.dataset.chave===chave) return;
+  el.dataset.chave=chave;
+  el.innerHTML='<option value="">'+escLog(rotuloTodos)+'</option>'+valores.map(v=>'<option value="'+escLog(v)+'">'+escLog(v)+'</option>').join('');
+  el.value=valores.indexOf(atual)>=0?atual:'';
 }
 function renderVerificacoesAuditoria(){
   const tb=document.querySelector('#audVerifTable tbody'); if(!tb) return;
   const todos=analisarVerificacoesExtras(); const rev=audRevisados();
   const mostrarRev=!!(document.getElementById('audMostrarRev')||{}).checked;
   const abertos=todos.filter(r=>!rev.has(r.id));
-  const lista=mostrarRev?todos:abertos;
+  preencherSelectAud('audFTipo', Array.from(new Set(todos.map(r=>r.tipo))).sort(), 'Todos os tipos');
+  preencherSelectAud('audFOnde', Array.from(new Set(todos.map(r=>r.origem))).sort(), 'Todas as caixas/origens');
+  const fg=(document.getElementById('audFGrav')||{}).value||'', ft=(document.getElementById('audFTipo')||{}).value||'', fo=(document.getElementById('audFOnde')||{}).value||'';
+  const filtrado=!!(fg||ft||fo);
+  const lista=(mostrarRev?todos:abertos).filter(r=>(!fg||r.grav===fg)&&(!ft||r.tipo===ft)&&(!fo||r.origem===fo));
   window.__verifRows=lista;
   const rs=document.getElementById('audVerifResumo');
-  if(rs){ const n=(g)=>abertos.filter(r=>r.grav===g).length; rs.textContent=abertos.length?'('+abertos.length+': '+n('alta')+' alta, '+n('media')+' média, '+n('baixa')+' baixa)':'(nada pendente)'; }
+  if(rs){ const n=(g)=>abertos.filter(r=>r.grav===g).length; rs.textContent=(abertos.length?'('+abertos.length+': '+n('alta')+' alta, '+n('media')+' média, '+n('baixa')+' baixa)':'(nada pendente)')+(filtrado?' · filtrado: '+lista.length:''); }
   const rotulo={alta:'Alta', media:'Média', baixa:'Baixa'};
   const vis=lista.slice(0,uiAud.limite);
   tb.innerHTML=vis.map((r,i)=>'<tr'+(rev.has(r.id)?' class="aud-rev"':'')+'><td><span class="badge g-'+r.grav+'">'+rotulo[r.grav]+'</span></td>'+
@@ -3048,7 +3140,7 @@ function renderVerificacoesAuditoria(){
     '<td><b>'+escLog(r.tipo)+'</b><div>'+escLog(r.nome||'')+(r.codigo?' <span class="muted">('+escLog(r.codigo)+')</span>':'')+'</div><div class="muted">'+escLog(r.motivo)+'</div></td>'+
     '<td><div class="flex"><button class="btn secondary btnAbrirVerif" data-i="'+i+'" style="padding:4px 9px;">Abrir</button><button class="btn secondary btnRevVerif" data-i="'+i+'" style="padding:4px 9px;">'+(rev.has(r.id)?'Reabrir':'Revisado')+'</button></div></td></tr>').join('')+
     (lista.length>vis.length?'<tr><td colspan="4"><button class="btn secondary" id="btnMaisVerif">Mostrar mais ('+(lista.length-vis.length)+')</button></td></tr>':'')||
-    '<tr><td colspan="4" class="muted">✅ Nenhuma verificação pendente.</td></tr>';
+    '<tr><td colspan="4" class="muted">'+(filtrado?'Nenhum item neste filtro.':'✅ Nenhuma verificação pendente.')+'</td></tr>';
 }
 async function abrirAchadoVerif(r){
   if(r.abrir==='cadastro'){ await irParaCaixaNoCadastro(r.cid, r.codigo); }
@@ -4374,6 +4466,10 @@ document.querySelector('#audVerifTable tbody').addEventListener('click', async e
   audSalvarRevisados(set); renderVerificacoesAuditoria();
 });
 document.getElementById('audMostrarRev').addEventListener('change', renderVerificacoesAuditoria);
+['audFGrav','audFTipo','audFOnde'].forEach(id=>document.getElementById(id).addEventListener('change', ()=>{ uiAud.limite=40; renderVerificacoesAuditoria(); }));
+document.getElementById('audFLimpar').addEventListener('click', ()=>{ ['audFGrav','audFTipo','audFOnde'].forEach(id=>{ document.getElementById(id).value=''; }); uiAud.limite=40; renderVerificacoesAuditoria(); });
+document.getElementById('audBusca').addEventListener('input', renderAuditoriaCadastros);
+document.getElementById('audFiltroTipo').addEventListener('change', renderAuditoriaCadastros);
 document.querySelector('#audLogTable tbody').addEventListener('click', async e=>{
   const btn=e.target.closest('.btnVerLog'); if(!btn) return;
   const r=(window.__logRows||[])[Number(btn.dataset.i)]; if(!r||!r.detalhe) return;
@@ -4403,6 +4499,10 @@ document.getElementById('btnIrNovoMed').addEventListener('click', ()=>{
   uiMap.aba='medicamentos'; aplicarAbaMapeamento();
   const box=document.getElementById('medNovoBox'); if(box){ box.open=true; const el=document.getElementById('novoMedPri'); if(el) el.focus(); }
 });
+
+document.getElementById('cadastroBusca').addEventListener('input', filtrarCadastro);
+document.getElementById('btnExpandirCad').addEventListener('click', ()=>{ document.querySelectorAll('#cadastroList > details.itemcard').forEach(d=>{ if(d.style.display!=='none') d.open=true; }); });
+document.getElementById('btnRecolherCad').addEventListener('click', ()=>{ document.querySelectorAll('#cadastroList > details.itemcard').forEach(d=>{ d.open=false; }); });
 
 function baixarArquivo(nome, conteudo, tipo){
   const blob = new Blob([conteudo], {type:tipo});
