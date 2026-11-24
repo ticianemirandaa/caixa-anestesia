@@ -234,6 +234,11 @@ a{color:var(--primary);}
 .itemcard.highlight{border-color:var(--primary); background:var(--ok-bg);}
 .itemcard input[type=text], .itemcard input[type=number], .itemcard input[type=date]{width:100%;}
 /* auditoria: verificações extras e registro de ações */
+details.filtros-box{border:1px solid var(--border); border-radius:10px; padding:0 12px; margin-bottom:10px;}
+details.filtros-box[open]{padding-bottom:10px;}
+details.filtros-box>summary,details.menu-exp>summary{cursor:pointer; font-weight:700; padding:9px 0; font-size:15px;}
+details.menu-exp{display:inline-block; vertical-align:top;}
+details.menu-exp[open]{display:block; flex-basis:100%;}
 details.aud-box>summary{cursor:pointer; font-weight:700; padding:8px 0; font-size:16px;}
 .badge.g-alta{background:var(--danger-bg); color:var(--danger);}
 .badge.g-media{background:var(--orange-bg); color:var(--orange);}
@@ -396,28 +401,39 @@ tr.aud-rev td{opacity:.55;}
       <h2>Histórico de reposições e conferências</h2>
       <div class="muted" id="historicoResumo" style="margin-bottom:8px;"></div>
       <div class="flex" style="margin-bottom:10px;">
-        <select id="histTipoSelect"><option value="__all__">Reposição e conferência</option><option value="REPOSICAO">Só reposição</option><option value="CONFERENCIA">Só conferência</option></select>
-        <select id="histCaixaSelect"><option value="__all__">Todas as caixas</option></select>
-        <input type="text" id="histBusca" placeholder="Buscar medicamento, código ou lote…" style="min-width:200px;">
-        <label class="muted" style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="histBuscaTudo" style="width:18px;height:18px;"> incluir onde só foi bipado</label>
+        <input type="text" id="histBusca" placeholder="🔎 Buscar medicamento, código ou lote…" style="flex:1;min-width:200px;">
         <button class="btn secondary" id="btnOrdemHist" title="Inverter a ordem por horário">⬇️ Mais recentes primeiro</button>
       </div>
-      <div class="flex" style="margin-bottom:10px;align-items:center;">
-        <label class="muted">De</label><input type="date" id="histDe">
-        <label class="muted">Até</label><input type="date" id="histAte">
-        <button class="btn secondary btnPeriodoHist" data-per="hoje" style="padding:6px 12px;">Hoje</button>
-        <button class="btn secondary btnPeriodoHist" data-per="7" style="padding:6px 12px;">7 dias</button>
-        <button class="btn secondary btnPeriodoHist" data-per="30" style="padding:6px 12px;">30 dias</button>
-        <button class="btn secondary btnPeriodoHist" data-per="limpar" style="padding:6px 12px;">Limpar período</button>
-      </div>
-      <div class="flex" style="margin-bottom:10px;align-items:center;">
+      <details class="filtros-box" id="histFiltros">
+        <summary>Filtros <span class="badge warn" id="histFiltrosBadge" style="display:none;"></span></summary>
+        <div class="flex" style="margin:4px 0 10px;">
+          <select id="histTipoSelect"><option value="__all__">Reposição e conferência</option><option value="REPOSICAO">Só reposição</option><option value="CONFERENCIA">Só conferência</option></select>
+          <select id="histCaixaSelect"><option value="__all__">Todas as caixas</option></select>
+          <div style="flex-basis:100%;"><label style="display:flex;align-items:center;gap:6px;font-weight:700;"><input type="checkbox" id="histBuscaTudo" style="width:18px;height:18px;"> Busca ampla</label><div class="muted" style="font-size:12.5px;margin:2px 0 0 24px;">Desligada: esconde os registros em que o item só foi bipado, sem reposição nem divergência. Ligada: mostra todos.</div></div>
+        </div>
+        <div class="flex" style="align-items:center;">
+          <label class="muted">De</label><input type="date" id="histDe">
+          <label class="muted">Até</label><input type="date" id="histAte">
+          <button class="btn secondary btnPeriodoHist" data-per="hoje" style="padding:6px 12px;">Hoje</button>
+          <button class="btn secondary btnPeriodoHist" data-per="7" style="padding:6px 12px;">7 dias</button>
+          <button class="btn secondary btnPeriodoHist" data-per="30" style="padding:6px 12px;">30 dias</button>
+          <button class="btn secondary btnPeriodoHist" data-per="limpar" style="padding:6px 12px;">Limpar período</button>
+          <button class="btn secondary" id="btnLimparFiltrosHist" style="padding:6px 12px;">Limpar todos os filtros</button>
+        </div>
+      </details>
+      <div class="flex" style="margin-bottom:10px;align-items:flex-start;">
         <button class="btn danger" id="btnExcluirHist" disabled>🗑️ Excluir selecionados (0)</button>
-        <button class="btn secondary" id="btnExportarCsv" style="margin-left:auto;">⬇️ Exportar histórico (Excel/CSV)</button>
-        <button class="btn secondary" id="btnExportarBackup">⬇️ Backup completo (JSON)</button>
+        <details class="menu-exp" style="margin-left:auto;">
+          <summary>⬇️ Exportar / backup</summary>
+          <div class="flex" style="margin-bottom:6px;">
+            <button class="btn secondary" id="btnExportarCsv">⬇️ Exportar histórico (Excel/CSV)</button>
+            <button class="btn secondary" id="btnExportarBackup">⬇️ Backup completo (JSON)</button>
+          </div>
+        </details>
       </div>
       <div class="table-wrap">
         <table id="historicoTable">
-          <thead><tr><th style="width:36px;"><input type="checkbox" id="chkHistTodos" title="Selecionar todos os registros filtrados" style="width:20px;height:20px;"></th><th>ID</th><th>Tipo</th><th>Data</th><th>Hora</th><th>Caixa</th><th>Responsável</th><th>Itens</th><th>Divergências</th></tr></thead>
+          <thead><tr><th style="width:36px;"><input type="checkbox" id="chkHistTodos" title="Selecionar todos os registros exibidos" style="width:20px;height:20px;"></th><th>ID</th><th>Tipo</th><th>Data</th><th>Hora</th><th>Caixa</th><th>Responsável</th><th>Itens</th><th>Divergências</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -444,6 +460,7 @@ tr.aud-rev td{opacity:.55;}
         <h2 style="margin:0;">Registros (para controle)</h2>
         <select id="lacFiltroCaixa"></select>
       </div>
+      <label class="muted" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;"><input type="checkbox" id="lacSoPend" style="width:18px;height:18px;"> só aguardando 2º cheque</label>
       <div id="lacPendentes" class="muted" style="margin-bottom:10px;font-weight:700;"></div>
       <div class="table-wrap">
         <table id="lacresTable"><thead><tr><th>Data</th><th>Horário</th><th>Lacre 1</th><th>Lacre 2</th><th>Caixa</th><th>1º Cheque</th><th>2º Cheque</th><th>Observações</th><th></th></tr></thead><tbody></tbody></table>
@@ -476,6 +493,7 @@ tr.aud-rev td{opacity:.55;}
   <section class="view" id="view-mapeamento">
     <div class="modebar" id="mapSubnav" style="flex-wrap:wrap;">
       <button class="modebtn active" data-mapaba="codigos">Códigos <span id="cntMapCodigos"></span></button>
+      <button class="modebtn" data-mapaba="medicamentos">Medicamentos <span id="cntMapMeds"></span></button>
       <button class="modebtn" data-mapaba="lotes">Lotes e vínculos <span id="cntMapLotes"></span></button>
       <button class="modebtn" data-mapaba="auditoria">Auditoria</button>
     </div>
@@ -483,10 +501,35 @@ tr.aud-rev td{opacity:.55;}
       <h2>Códigos mapeados</h2>
       <div class="flex" style="margin-bottom:10px;"><input type="text" id="mapBuscaCodigos" placeholder="🔎 Buscar por código ou medicamento" style="flex:1;min-width:200px;"><span class="muted" id="mapResumoCodigos"></span></div>
       <div class="scan-box"><input type="text" id="mapeamentoScanInput" placeholder="Bipe aqui pra mapear (ou remapear) um código, sem precisar esperar a reposição/conferência…" autocomplete="off"></div>
+      <details class="menu-exp" style="margin-bottom:10px;"><summary>➕ Adicionar código manualmente</summary>
       <div class="flex" style="margin-bottom:12px;"><input type="text" id="novoMapCodigo" placeholder="Código (GTIN ou 6 dígitos)" style="flex:1;min-width:160px;"><select id="novoMapMed" style="flex:2;min-width:200px;"></select><button class="btn" id="btnAddMap">Adicionar</button></div>
+      <div class="muted" style="margin:-4px 0 10px;">O medicamento não está na lista? <button class="btn secondary" id="btnIrNovoMed" style="padding:4px 10px;">➕ Cadastrar novo medicamento</button></div>
+      </details>
       <div class="table-wrap">
         <table id="mapaTable"><thead><tr><th>Código lido</th><th>Medicamento vinculado</th><th>Ações</th></tr></thead><tbody></tbody></table>
       </div>
+    </div>
+    <div class="card" id="mapCard-medicamentos" style="display:none;">
+      <h2>Medicamentos cadastrados</h2>
+      <div class="muted" style="margin-bottom:8px;">O que há dentro das caixas: princípio ativo, quantidade, apresentação comercial e código. Edite e toque em Salvar: a mudança vale para <b>todas</b> as caixas.</div>
+      <details class="menu-exp" id="medNovoBox" style="margin-bottom:10px;">
+        <summary>➕ Novo medicamento (entra em todas as caixas)</summary>
+        <div class="flex" style="margin-bottom:8px;">
+          <input type="text" id="novoMedPri" placeholder="Princípio ativo" style="flex:2;min-width:170px;">
+          <input type="text" id="novoMedNome" placeholder="Apresentação comercial" style="flex:3;min-width:200px;">
+          <input type="text" id="novoMedCod" placeholder="Código" style="flex:1;min-width:110px;">
+          <input type="number" id="novoMedQtd" min="1" step="1" placeholder="Qtde" style="width:80px;">
+          <button class="btn" id="btnAddMedNovo">Adicionar a todas as caixas</button>
+        </div>
+      </details>
+      <details class="menu-exp" id="medHistBox" style="margin-bottom:10px;">
+        <summary>🕘 Atualizar nomes no histórico antigo</summary>
+        <div class="muted" style="margin:2px 0 8px;">Troca o nome gravado nos registros antigos pelo nome atual do cadastro (pelo <b>código</b>). Só o texto do nome muda: lotes, quantidades e resultados ficam como estão. Antes de gravar, o app baixa um backup dos registros afetados.</div>
+        <div class="flex" style="margin-bottom:6px;"><button class="btn secondary" id="btnPrevHistNomes">Ver o que mudaria</button><button class="btn" id="btnAplicarHistNomes" disabled>Backup e atualizar</button></div>
+        <div id="medHistStatus" class="muted"></div>
+      </details>
+      <div class="flex" style="margin-bottom:10px;"><input type="text" id="medCatBusca" placeholder="🔎 Buscar por princípio ativo, apresentação ou código" style="flex:1;min-width:200px;"><span class="muted" id="medCatResumo"></span></div>
+      <div class="table-wrap"><table id="medCatTable"><thead><tr><th>Princípio ativo</th><th>Qtde</th><th>Apresentação comercial</th><th>Código</th><th>Ação</th></tr></thead><tbody></tbody></table></div>
     </div>
     <div class="card" id="mapCard-lotes" style="display:none;">
       <h2>Lotes e vínculos</h2>
@@ -1859,7 +1902,10 @@ function coletarFormularioCadastro(){
       lotes.push({loteFornecedor:lF||null, loteInstitucional:lI||null, validade: val||null, qtdeMax: qMax===''?null:parseInt(qMax,10)});
     });
     if (!medicamento && !codigo) return;
-    itens.push({codigo: codigo||null, medicamento: medicamento||'(sem nome)', qtde: isNaN(qtde)?0:qtde, lotes:consolidarLotesDoItem(lotes)});
+    const novoIt={codigo: codigo||null, medicamento: medicamento||'(sem nome)', qtde: isNaN(qtde)?0:qtde, lotes:consolidarLotesDoItem(lotes)};
+    const prevIt=codigo?(((currentCaixa()||{}).itens)||[]).find(x=>String(x.codigo)===String(codigo)):null;
+    if(prevIt && prevIt.principioAtivo) novoIt.principioAtivo=prevIt.principioAtivo;
+    itens.push(novoIt);
   });
   return itens;
 }
@@ -2093,6 +2139,7 @@ document.getElementById('btnReimportarPlanilha').addEventListener('click', async
   const ok = await confirmarEstilizado('Reimportar da planilha?', corpo, 'Reimportar', 'Cancelar');
   if (!ok) return;
   const itensNovos = JSON.parse(JSON.stringify(dadosPlanilha));
+  try{ const antIt=((state.referencia[state.caixaId]||{}).itens)||[]; itensNovos.forEach(n=>{ const o=antIt.find(x=>String(x.codigo)===String(n.codigo)); if(o&&o.principioAtivo) n.principioAtivo=o.principioAtivo; }); }catch(e){ console.error(e); }
   const antesImpJson = JSON.stringify(state.referencia[state.caixaId]||null);
   state.referencia[state.caixaId] = {nome: caixa.nome, itens: itensNovos};
   renderAll();
@@ -2435,7 +2482,8 @@ function resumoBuscaHtml(h, q, incluirTudo){
   const linha=(m)=>'<div style="font-size:12px;margin-top:4px;">🔎 <b>'+esc(nomeCurtoMedicamento(m.it.medicamento))+'</b> · '+esc(m.texto)+(m.lotes.length?' · lote '+m.lotes.map(l=>esc(l.loteInstitucional||l.loteFornecedor||'—')+' ('+(Number(l.qtd)||0)+' un.)').join(', '):'')+'</div>';
   return ms.slice(0,3).map(linha).join('')+(ms.length>3?'<div class="muted" style="font-size:12px;">+'+(ms.length-3)+' item(ns)</div>':'');
 }
-const uiHist={sel:new Set(), ordem:'desc'};   // 'desc' = mais recentes primeiro
+const uiHist={sel:new Set(), ordem:'desc', limite:30, sig:''};
+const PAGINA_HIST=30;   // 'desc' = mais recentes primeiro
 function horarioHistorico(h){
   // horário do registro em ms: usa criadoEm; nos registros antigos sem ele, monta a partir de data (dd/mm/aaaa) e hora
   const t=h.criadoEm?new Date(h.criadoEm).getTime():NaN;
@@ -2479,10 +2527,24 @@ function atualizarSelecaoHist(list){
   const todos=document.getElementById('chkHistTodos');
   if(todos){ const marcados=list.filter(h=>uiHist.sel.has(h.confId)).length; todos.checked=list.length>0&&marcados===list.length; todos.indeterminate=marcados>0&&marcados<list.length; }
 }
+function assinaturaFiltroHist(){
+  const v=(id)=>{ const el=document.getElementById(id); return el?(el.type==='checkbox'?el.checked:el.value):''; };
+  return JSON.stringify([v('histTipoSelect'),v('histCaixaSelect'),v('histBusca'),v('histBuscaTudo'),v('histDe'),v('histAte')]);
+}
+function historicoVisivel(){ return historicoFiltrado().slice(0,uiHist.limite); }
+function atualizarBadgeFiltrosHist(){
+  const b=document.getElementById('histFiltrosBadge'); if(!b) return;
+  const g=(id)=>(document.getElementById(id)||{});
+  const n=(g('histTipoSelect').value!=='__all__'?1:0)+(g('histCaixaSelect').value!=='__all__'?1:0)+(g('histBuscaTudo').checked?1:0)+(g('histDe').value?1:0)+(g('histAte').value?1:0);
+  b.style.display=n?'inline-block':'none'; b.textContent=n+' ativo'+(n>1?'s':'');
+}
 function renderHistorico(){
   const tbody = document.querySelector('#historicoTable tbody');
   const list = historicoFiltrado();
-  tbody.innerHTML = list.map(h=>{
+  const sigH = assinaturaFiltroHist();
+  if(sigH!==uiHist.sig){ uiHist.sig=sigH; uiHist.limite=PAGINA_HIST; uiHist.sel.clear(); }   // mudou o filtro: volta à 1ª página e limpa a seleção (nada selecionado fora da vista)
+  const vis = list.slice(0, uiHist.limite);
+  tbody.innerHTML = vis.map(h=>{
     const divergentes = h.itens.filter(it=>it.resultado==='DIVERGÊNCIA').length;
     const tipoBadge = tipoBadgeHtml(h.tipo);
     return '<tr class="histRow '+(h.tipo==='REPOSICAO'?'rep':'conf')+'" data-id="'+esc(h.confId)+'" style="cursor:pointer;">' +
@@ -2494,15 +2556,16 @@ function renderHistorico(){
         (chipsRepostosHtml(h,true) ? '<div style="margin-top:6px;"><div class="muted" style="font-size:12px;margin-bottom:3px;">📦 Repostos ('+h.itensRepostos.length+')</div><div style="display:flex;flex-wrap:wrap;gap:4px;">'+chipsRepostosHtml(h,true)+'</div></div>' : '')+'</td>' +
       '<td>'+(h.tipo==='CONFERENCIA' ? (divergentes>0? '<span class="badge danger">'+divergentes+' divergência(s)</span>' : '<span class="badge ok">OK</span>') : '—')+'</td>' +
       '</tr>';
-  }).join('') || '<tr><td colspan="9" class="muted">Nenhum registro encontrado.</td></tr>';
+  }).join('') + (list.length>vis.length?'<tr><td colspan="9"><button class="btn secondary btnMaisHist">Mostrar mais ('+(list.length-vis.length)+' restantes)</button></td></tr>':'') || '<tr><td colspan="9" class="muted">Nenhum registro encontrado.</td></tr>';
   const bo=document.getElementById('btnOrdemHist'); if(bo) bo.textContent = uiHist.ordem==='asc' ? '⬆️ Mais antigos primeiro' : '⬇️ Mais recentes primeiro';
   const resumoEl = document.getElementById('historicoResumo');
   if (resumoEl){
     const reps = list.filter(h=>h.tipo==='REPOSICAO').length;
     const confs = list.filter(h=>h.tipo==='CONFERENCIA').length;
-    resumoEl.textContent = list.length+' registro(s) — '+reps+' reposição(ões) e '+confs+' conferência(s)';
+    resumoEl.textContent = list.length+' registro(s) — '+reps+' reposição(ões) e '+confs+' conferência(s)'+(list.length>vis.length?' · mostrando '+vis.length:'');
   }
-  atualizarSelecaoHist(list);
+  atualizarSelecaoHist(vis);
+  atualizarBadgeFiltrosHist();
 }
 function definirPeriodoHist(per){
   const hoje=new Date(); const iso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -2665,10 +2728,11 @@ function atualizarContadoresMapeamento(){
   set('cntMapLotes',linhasLotesUnificadas().length);
 }
 function aplicarAbaMapeamento(){
-  ['codigos','lotes','auditoria'].forEach(k=>{ const c=document.getElementById('mapCard-'+k); if(c) c.style.display = (k===uiMap.aba)?'':'none'; });
+  ['codigos','medicamentos','lotes','auditoria'].forEach(k=>{ const c=document.getElementById('mapCard-'+k); if(c) c.style.display = (k===uiMap.aba)?'':'none'; });
   document.querySelectorAll('#mapSubnav button').forEach(b=>b.classList.toggle('active', b.dataset.mapaba===uiMap.aba));
 }
 function renderMapeamentoTable(){
+  try{ renderMedicamentosCatalogo(); }catch(e){ console.error(e); }
   const tbody = document.querySelector('#mapaTable tbody');
   const novoSel = document.getElementById('novoMapMed');
   if (novoSel && !(document.activeElement===novoSel)) { const v=novoSel.value; novoSel.innerHTML=opcoesMedicamentosHtml(v); if(v) novoSel.value=v; }
@@ -2993,6 +3057,199 @@ async function abrirAchadoVerif(r){
   else if(r.abrir==='status'){ await switchTab('status'); }
   else if(r.abrir==='historico'){ if(await switchTab('historico')===false) return; renderHistDetalhe(r.confId); }
 }
+/* ---------------- Medicamentos: princípio ativo, apresentação, código e quantidade (alterações valem para todas as caixas) ---------------- */
+const PRINCIPIO_ATIVO_PADRAO={'106145':'ALFENTANILA 0,5MG/ML','104314':'DEXTROCETAMINA 50MG/ML','101831':'DIAZEPAM 10MG','101823':'DROPERIDOL 2,5MG/ML','101213':'EFEDRINA 5%','107949':'ETOMIDATO 20MG','102780':'FENTANILA 50MCG/ML','105872':'FLUMAZENIL 0,5MG','106543':'HALOPERIDOL 5MG','102099':'METARAMINOL 10MG','109503':'MIDAZOLAM 5MG','100786':'MORFINA 1MG/ML','100791':'NALOXONA 0,4MG','100809':'PROPOFOL - 20ML','100797':'REMIFENTANIL 2MG','106184':'REMIFENTANIL 2MG','110869':'SUGAMADEX 100MG/ML','103744':'TRAMADON 100mg AP 2ml'};
+const uiMedCat={busca:'', limite:40};
+function modaContagem(c){ const ns=Object.entries(c).sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))); return ns.length?ns[0][0]:''; }
+function catalogoMedicamentos(){
+  const ids=Object.keys(state.referencia||{}); const mapa={};
+  const novo=(k)=>({codigo:k, nomes:{}, principios:{}, qtdes:{}, porCaixa:{}});
+  ids.forEach(cid=>{ const c=state.referencia[cid]; (c.itens||[]).forEach(it=>{
+    if(it.codigo===undefined||it.codigo===null||String(it.codigo)==='') return;
+    const k=String(it.codigo); const e=mapa[k]||(mapa[k]=novo(k));
+    const n=String(it.medicamento||'').trim(); e.nomes[n]=(e.nomes[n]||0)+1;
+    const p=String(it.principioAtivo||'').trim(); if(p) e.principios[p]=(e.principios[p]||0)+1;
+    const q=String(Number(it.qtde)||0); e.qtdes[q]=(e.qtdes[q]||0)+1;
+    e.porCaixa[cid]={nome:c.nome||cid, qtde:Number(it.qtde)||0};
+  }); });
+  const lidos={};
+  Object.values(state.mapeamentos||{}).forEach(m=>{ const k=String(m.codigo); lidos[k]=(lidos[k]||0)+1; });
+  Object.keys(lidos).forEach(k=>{ if(!mapa[k]){ mapa[k]=novo(k); mapa[k].orfao=true; } });
+  return Object.values(mapa).map(e=>{
+    e.nome=modaContagem(e.nomes); e.variantes=Object.keys(e.nomes);
+    e.principio=modaContagem(e.principios)||PRINCIPIO_ATIVO_PADRAO[e.codigo]||'';
+    e.qtde=Number(modaContagem(e.qtdes))||0; e.qtdeDiferem=Object.keys(e.qtdes).length>1;
+    e.caixas=Object.values(e.porCaixa).map(x=>x.nome);
+    e.faltaEm=ids.filter(cid=>!e.porCaixa[cid]).map(cid=>state.referencia[cid].nome||cid);
+    e.lidos=lidos[e.codigo]||0; return e;
+  }).sort((a,b)=>(a.principio||a.nome||'~').localeCompare(b.principio||b.nome||'~')||a.codigo.localeCompare(b.codigo));
+}
+function renderMedicamentosCatalogo(){
+  const tbody=document.querySelector('#medCatTable tbody'); if(!tbody) return;
+  const todos=catalogoMedicamentos();
+  const cnt=document.getElementById('cntMapMeds'); if(cnt) cnt.textContent='('+todos.filter(e=>!e.orfao).length+')';
+  if(editandoNaTabela(tbody)) return;
+  const q=semAcentoMin(uiMedCat.busca||'').trim();
+  const lista=todos.filter(e=>!q||semAcentoMin(e.codigo+' '+e.principio+' '+e.variantes.join(' ')).includes(q));
+  const vis=lista.slice(0,uiMedCat.limite);
+  const rs=document.getElementById('medCatResumo'); if(rs) rs.textContent=todos.length?('Mostrando '+vis.length+' de '+lista.length+(q?' (filtrado)':'')):'';
+  const aviso=(t)=>'<div class="muted" style="font-size:12.5px;margin-top:3px;">'+t+'</div>';
+  tbody.innerHTML=vis.map(e=>{
+    if(e.orfao) return '<tr><td class="muted">—</td><td class="muted">—</td><td class="muted">Não está em nenhuma caixa (só há códigos lidos ligados a ele: '+e.lidos+')</td><td><b>'+escLog(e.codigo)+'</b></td><td></td></tr>';
+    const avQtd=e.qtdeDiferem?aviso('⚠️ Diferente entre caixas: '+escLog(Object.values(e.porCaixa).map(x=>x.nome+': '+x.qtde).join(' · '))):'';
+    const avNome=e.variantes.length>1?aviso('⚠️ Nomes diferentes: '+escLog(e.variantes.join(' · '))):'';
+    const avCx=e.faltaEm.length?aviso('⚠️ Falta em: '+escLog(e.faltaEm.join(', '))):aviso('Em '+e.caixas.length+' caixa(s)'+(e.lidos?' · '+e.lidos+' código(s) lido(s)':''));
+    return '<tr><td><input class="edit-med-pri" type="text" value="'+escLog(e.principio)+'" style="width:100%;min-width:150px;"></td>'+
+      '<td><input class="edit-med-qtd" type="number" min="0" step="1" value="'+e.qtde+'" style="width:72px;">'+avQtd+'</td>'+
+      '<td><input class="edit-med-nome" type="text" value="'+escLog(e.nome)+'" style="width:100%;min-width:220px;">'+avNome+avCx+'</td>'+
+      '<td><input class="edit-med-cod" type="text" value="'+escLog(e.codigo)+'" style="width:100%;min-width:90px;"></td>'+
+      '<td><button class="btn btnSalvarMed" data-cod="'+escLog(e.codigo)+'">Salvar</button></td></tr>';
+  }).join('')+(lista.length>vis.length?'<tr><td colspan="5"><button class="btn secondary btnMaisMedCat">Mostrar mais ('+(lista.length-vis.length)+' restantes)</button></td></tr>':'')||'<tr><td colspan="5" class="muted">Nenhum medicamento encontrado.</td></tr>';
+}
+function medCaixaEmUso(){
+  const locks=Object.entries(state.emUso||{}).filter(([id,l])=>l&&l.atualizadoEm&&(Date.now()-new Date(l.atualizadoEm).getTime()<10*60*1000));
+  if(!locks.length) return false;
+  mostrarToast('Há caixa em uso agora ('+locks.map(([id])=>{ const c=(typeof CAIXAS!=='undefined'?CAIXAS:[]).find(x=>x.id===id); return c?c.nome:id; }).join(', ')+'). Faça isso quando ninguém estiver conferindo ou repondo.','erro');
+  return true;
+}
+function medValidarCampos(d){
+  const r={codigo:String(d.codigo||'').trim(), nome:String(d.nome||'').trim().replace(/\s+/g,' '), principio:String(d.principio||'').trim().replace(/\s+/g,' '), qtde:Number(d.qtde)};
+  if(!/^[A-Za-z0-9._-]{1,20}$/.test(r.codigo)){ mostrarToast('Código inválido: use letras, números, ponto, hífen ou _ (sem espaços, até 20 caracteres).','erro'); return null; }
+  if(!r.nome){ mostrarToast('Informe a apresentação comercial.','erro'); return null; }
+  if(r.nome.length>120||r.principio.length>120){ mostrarToast('Texto muito longo (máx. 120 caracteres).','erro'); return null; }
+  if(!Number.isInteger(r.qtde)||r.qtde<0||r.qtde>999){ mostrarToast('Quantidade inválida: use um número inteiro de 0 a 999.','erro'); return null; }
+  return r;
+}
+function medCodigoComoItem(ref, cod){ return (typeof ref==='number'&&/^\d{1,15}$/.test(cod))?Number(cod):cod; }
+async function alterarMedicamentoEmTodas(codAntigo, dados){
+  codAntigo=String(codAntigo);
+  const d=medValidarCampos(dados); if(!d) return false;
+  if(medCaixaEmUso()) return false;
+  const mudaCodigo=d.codigo!==codAntigo;
+  const itens=[], conflito=[];
+  Object.entries(state.referencia||{}).forEach(([cid,c])=>(c.itens||[]).forEach(it=>{
+    const cod=String(it.codigo);
+    if(cod===codAntigo) itens.push({cid:cid, nomeCaixa:c.nome||cid, it:it});
+    else if(mudaCodigo && cod===d.codigo) conflito.push(c.nome||cid);
+  }));
+  if(!itens.length){ mostrarToast('Esse código não está em nenhuma caixa.','erro'); return false; }
+  if(conflito.length){ mostrarToast('O código '+d.codigo+' já existe em: '+Array.from(new Set(conflito)).join(', ')+'. Para juntar dois medicamentos, remova um deles no cadastro da caixa antes.','erro'); return false; }
+  const uniq=(arr)=>Array.from(new Set(arr));
+  const nomesAntes=uniq(itens.map(a=>String(a.it.medicamento||''))), priAntes=uniq(itens.map(a=>String(a.it.principioAtivo||''))), qtdAntes=uniq(itens.map(a=>String(Number(a.it.qtde)||0)));
+  const difNome=nomesAntes.length!==1||nomesAntes[0]!==d.nome, difPri=priAntes.length!==1||priAntes[0]!==d.principio, difQtd=qtdAntes.length!==1||qtdAntes[0]!==String(d.qtde);
+  if(!mudaCodigo&&!difNome&&!difPri&&!difQtd){ mostrarToast('Nada para alterar: já está assim em todas as caixas.'); return false; }
+  if(difQtd){
+    const exc=itens.filter(a=>resumoLimiteItem(Object.assign({}, a.it, {qtde:d.qtde})).exc>0).map(a=>a.nomeCaixa);
+    if(exc.length){ mostrarToast('A nova quantidade ('+d.qtde+') é menor que os lotes cadastrados em: '+uniq(exc).join(', ')+'. Ajuste os lotes nessas caixas antes.','erro'); return false; }
+  }
+  const caixas=uniq(itens.map(a=>a.cid)), nomesCaixas=uniq(itens.map(a=>a.nomeCaixa));
+  const gtins=mudaCodigo?Object.entries(state.mapeamentos||{}).filter(([k,m])=>String(m.codigo)===codAntigo).map(([k])=>k):[];
+  const linhas=[];
+  if(mudaCodigo) linhas.push('<b>Código:</b> '+escLog(codAntigo)+' → <b>'+escLog(d.codigo)+'</b>');
+  if(difNome) linhas.push('<b>Apresentação:</b> '+escLog(nomesAntes.join(' | '))+' → <b>'+escLog(d.nome)+'</b>');
+  if(difPri) linhas.push('<b>Princípio ativo:</b> '+escLog(priAntes.map(x=>x||'(vazio)').join(' | '))+' → <b>'+escLog(d.principio||'(vazio)')+'</b>');
+  if(difQtd) linhas.push('<b>Quantidade por caixa:</b> '+escLog(qtdAntes.join(' | '))+' → <b>'+d.qtde+'</b>');
+  const ok=await confirmarEstilizado('Alterar em todas as caixas?','<div class="muted">'+linhas.join('<br>')+'<br><br>Caixas ('+caixas.length+'): '+escLog(nomesCaixas.join(', '))+'.<br><br>Lotes e validades <b>continuam nos itens</b> até a próxima reposição. O histórico antigo não muda.</div>','Alterar','Cancelar');
+  if(!ok) return false;
+  let mover=false;
+  if(gtins.length){
+    mover=await confirmarEstilizado('Códigos lidos (GTIN)','<div class="muted">Há <b>'+gtins.length+'</b> código(s) lido(s) ligados ao código antigo <b>'+escLog(codAntigo)+'</b>. Passar para o novo código <b>'+escLog(d.codigo)+'</b>?<br><br>Escolha “Manter no antigo” se o produto antigo ainda pode aparecer nas caixas.</div>','Passar para o novo','Manter no antigo');
+  }
+  itens.forEach(a=>{
+    if(mudaCodigo) a.it.codigo=medCodigoComoItem(a.it.codigo, d.codigo);
+    a.it.medicamento=d.nome; a.it.qtde=d.qtde;
+    if(d.principio) a.it.principioAtivo=d.principio; else delete a.it.principioAtivo;
+  });
+  let falhas=0;
+  for(const cid of caixas){ try{ await salvarReferenciaAuditada(cid); }catch(e){ falhas++; console.error(e); } }
+  let movidos=0;
+  if(mover){ for(const k of gtins){ try{ await saveMapeamento(k, d.codigo); movidos++; }catch(e){ falhas++; console.error(e); } } }
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  renderAll(); renderMedicamentosCatalogo();
+  mostrarToast(falhas?('⚠️ Alterado, mas '+falhas+' item(ns) não sincronizaram agora. Confira e repita se preciso.'):('✅ Alterado em '+caixas.length+' caixa(s).'), falhas?'erro':undefined);
+  registrarLog('Medicamentos','Alterar',(mudaCodigo?'Troca '+codAntigo+' → '+d.codigo+': ':'Código '+codAntigo+': ')+nomesAntes.join(' | ')+' → '+d.nome+' · qtde '+d.qtde+' ('+caixas.length+' caixa(s)'+(gtins.length?', '+movidos+' código(s) lido(s) movido(s)':'')+')', {codigoAntes:codAntigo, codigoDepois:d.codigo, nomesAntes:nomesAntes, nomeDepois:d.nome, principiosAntes:priAntes, principioDepois:d.principio, qtdesAntes:qtdAntes, qtdeDepois:d.qtde, caixas:nomesCaixas, gtinsMovidos:mover?gtins:[], gtinsMantidos:mover?[]:gtins});
+  return true;
+}
+async function adicionarMedicamentoEmTodas(dados){
+  const d=medValidarCampos(dados); if(!d) return false;
+  if(d.qtde<1){ mostrarToast('Informe a quantidade por caixa (mínimo 1).','erro'); return false; }
+  if(medCaixaEmUso()) return false;
+  const ids=Object.keys(state.referencia||{});
+  if(!ids.length){ mostrarToast('Nenhuma caixa cadastrada.','erro'); return false; }
+  const jaTem=ids.filter(cid=>(state.referencia[cid].itens||[]).some(it=>String(it.codigo)===d.codigo)).map(cid=>state.referencia[cid].nome||cid);
+  if(jaTem.length){ mostrarToast('O código '+d.codigo+' já está cadastrado ('+jaTem.join(', ')+'). Para mudar, edite na lista abaixo.','erro'); return false; }
+  const nomesCaixas=ids.map(cid=>state.referencia[cid].nome||cid);
+  const ok=await confirmarEstilizado('Adicionar em todas as caixas?','<div class="muted"><b>'+escLog(d.nome)+'</b><br>Código <b>'+escLog(d.codigo)+'</b>'+(d.principio?' · '+escLog(d.principio):'')+' · <b>'+d.qtde+'</b> por caixa<br><br>Entra em '+ids.length+' caixa(s): '+escLog(nomesCaixas.join(', '))+'.<br>Lotes e validades ficam em branco até a reposição.</div>','Adicionar','Cancelar');
+  if(!ok) return false;
+  ids.forEach(cid=>{
+    const it=novoItemVazio(); it.codigo=/^\d{1,15}$/.test(d.codigo)?Number(d.codigo):d.codigo; it.medicamento=d.nome; it.qtde=d.qtde;
+    if(d.principio) it.principioAtivo=d.principio;
+    state.referencia[cid].itens=(state.referencia[cid].itens||[]).concat([it]);
+  });
+  let falhas=0;
+  for(const cid of ids){ try{ await salvarReferenciaAuditada(cid); }catch(e){ falhas++; console.error(e); } }
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  ['novoMedPri','novoMedNome','novoMedCod','novoMedQtd'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  renderAll(); renderMedicamentosCatalogo();
+  mostrarToast(falhas?('⚠️ Adicionado, mas '+falhas+' caixa(s) não sincronizaram agora.'):('✅ Adicionado em '+ids.length+' caixa(s).'), falhas?'erro':undefined);
+  registrarLog('Medicamentos','Criar','Novo medicamento '+d.codigo+' · '+d.nome+' · qtde '+d.qtde+' ('+ids.length+' caixa(s))', {codigo:d.codigo, nome:d.nome, principio:d.principio, qtde:d.qtde, caixas:nomesCaixas});
+  return true;
+}
+function calcularAtualizacaoNomesHistorico(){
+  const cat={}, ambiguos=[];
+  catalogoMedicamentos().forEach(e=>{ if(e.orfao||!e.nome) return; if(e.variantes.length>1) ambiguos.push(e.codigo); else cat[e.codigo]=e.nome; });
+  const regs=[], pares={}; let totalItens=0;
+  (state.historico||[]).forEach(h=>{
+    const muds=[];
+    (h.itens||[]).forEach((it,idx)=>{
+      const cod=String(it.codigo), novo=cat[cod], antes=String(it.medicamento||'');
+      if(novo && antes!==novo){ muds.push({idx:idx, cod:cod, antes:antes, depois:novo}); const k=cod+'|'+antes; (pares[k]=pares[k]||{cod:cod, antes:antes, depois:novo, n:0}).n++; }
+    });
+    if(muds.length){ regs.push({h:h, muds:muds}); totalItens+=muds.length; }
+  });
+  return {regs:regs, totalItens:totalItens, pares:Object.values(pares).sort((a,b)=>b.n-a.n), ambiguos:ambiguos};
+}
+function previaNomesHistorico(){
+  const r=calcularAtualizacaoNomesHistorico();
+  const st=document.getElementById('medHistStatus'), bt=document.getElementById('btnAplicarHistNomes');
+  if(bt) bt.disabled=!r.regs.length;
+  if(!st) return r;
+  let h='';
+  if(!r.regs.length) h+='✅ Nenhum registro do histórico precisa de atualização.';
+  else{
+    h+='<b>'+r.regs.length+'</b> registro(s) e <b>'+r.totalItens+'</b> item(ns) mudariam. Exemplos:<ul style="margin:6px 0 0 18px;padding:0;">'+r.pares.slice(0,12).map(x=>'<li>'+escLog(x.cod)+' · '+escLog(x.antes||'(vazio)')+' → <b>'+escLog(x.depois)+'</b> <span class="muted">(×'+x.n+')</span></li>').join('')+'</ul>';
+    if(r.pares.length>12) h+='<div>… e mais '+(r.pares.length-12)+' combinação(ões).</div>';
+  }
+  if(r.ambiguos.length) h+='<div style="margin-top:6px;">⚠️ Ignorados por ainda terem nomes diferentes entre caixas: '+escLog(r.ambiguos.join(', '))+'.</div>';
+  st.innerHTML=h; return r;
+}
+function comTempo(promessa, ms){ return Promise.race([promessa, new Promise((_,rej)=>setTimeout(()=>rej(new Error('tempo esgotado')), ms))]); }
+async function aplicarNomesHistorico(){
+  const r=calcularAtualizacaoNomesHistorico();
+  if(!r.regs.length){ previaNomesHistorico(); mostrarToast('Nada para atualizar no histórico.'); return false; }
+  const ok1=await confirmarEstilizado('Atualizar nomes no histórico?','<div class="muted"><b>'+r.regs.length+'</b> registro(s) e <b>'+r.totalItens+'</b> item(ns) vão receber o nome atual do cadastro (pelo código).<br><br>Primeiro o app <b>baixa um backup</b> dos registros afetados. Depois você confirma de novo antes de gravar.<br><br>Só o texto do nome muda.</div>','Baixar backup','Cancelar');
+  if(!ok1) return false;
+  baixarArquivo('backup-historico-antes-dos-nomes-'+dataLocalISO(new Date())+'.json', JSON.stringify(r.regs.map(x=>x.h),null,2), 'application/json');
+  const ok2=await confirmarEstilizado('Backup baixado','<div class="muted">Confira se o arquivo <b>backup-historico-antes-dos-nomes-…json</b> foi salvo no aparelho.<br><br>Atualizar agora os <b>'+r.regs.length+'</b> registro(s)?</div>','Atualizar','Cancelar');
+  if(!ok2) return false;
+  const bt=document.getElementById('btnAplicarHistNomes'), bp=document.getElementById('btnPrevHistNomes'), st=document.getElementById('medHistStatus');
+  if(bt) bt.disabled=true; if(bp) bp.disabled=true;
+  let feitos=0; const falhas=[], idsOk=[];
+  for(const x of r.regs){
+    const novo=Object.assign({}, x.h, {itens:(x.h.itens||[]).map((it,idx)=>{ const m=x.muds.find(y=>y.idx===idx); return m?Object.assign({}, it, {medicamento:m.depois}):it; })});
+    try{
+      if(dbApi) await comTempo(Promise.resolve(dbApi.doc('historico/'+x.h.confId).set(novo)), 20000);
+      const pos=state.historico.findIndex(y=>y.confId===x.h.confId); if(pos>=0) state.historico[pos]=novo;
+      idsOk.push(x.h.confId);
+    }catch(e){ console.error(e); falhas.push(x.h.confId); }
+    feitos++; if(st && (feitos%10===0||feitos===r.regs.length)) st.textContent='Atualizando '+feitos+' de '+r.regs.length+'…';
+  }
+  if(bp) bp.disabled=false;
+  renderAll(); previaNomesHistorico();
+  mostrarToast(falhas.length?('⚠️ '+idsOk.length+' atualizado(s); '+falhas.length+' não sincronizaram. Toque em "Ver o que mudaria" e repita.'):('✅ '+idsOk.length+' registro(s) do histórico atualizado(s).'), falhas.length?'erro':undefined);
+  registrarLog('Histórico','Alterar','Nomes padronizados no histórico: '+idsOk.length+' registro(s), '+r.totalItens+' item(ns)'+(falhas.length?' ('+falhas.length+' falharam)':''), {combinacoes:r.pares.slice(0,60), registros:idsOk.slice(0,300), falhas:falhas});
+  return !falhas.length;
+}
 async function salvarReferenciaAuditada(cid){
   const c=state.referencia[cid];
   if(dbApi) await dbApi.doc('referencia/'+cid).set({nome:c.nome,itens:c.itens});
@@ -3244,6 +3501,7 @@ async function aprovarSegundoCheque(id){
   catch(e){ console.error(e); mostrarToast('⚠️ Aprovado aqui, mas não sincronizou agora.','erro'); }
   return true;
 }
+const PAGINA_LAC=30; const uiLac={limite:PAGINA_LAC, sig:''};
 function renderLacres(){
   const tbody=document.querySelector('#lacresTable tbody'); if(!tbody) return;
   const opts=CAIXAS.map(c=>'<option value="'+c.id+'">'+esc(lacCaixaNome(c.id))+'</option>').join('');
@@ -3251,14 +3509,17 @@ function renderLacres(){
   if(selC && document.activeElement!==selC){ const v=selC.value||state.caixaId; selC.innerHTML=opts; selC.value=v; }
   if(selF && document.activeElement!==selF){ const v=selF.value||'__all__'; selF.innerHTML='<option value="__all__">Todas as caixas</option>'+opts; selF.value=v; }
   const filtro=selF?selF.value:'__all__';
-  const lista=(state.lacres||[]).filter(r=>!filtro||filtro==='__all__'||r.caixaId===filtro);
+  const soPend=!!(document.getElementById('lacSoPend')||{}).checked;
+  const lista=(state.lacres||[]).filter(r=>(!filtro||filtro==='__all__'||r.caixaId===filtro) && (!soPend||!lacSegundoOk(r)));
+  const sigL=filtro+'|'+soPend; if(sigL!==uiLac.sig){ uiLac.sig=sigL; uiLac.limite=PAGINA_LAC; }
+  const visL=lista.slice(0,uiLac.limite);
   const pend=document.getElementById('lacPendentes');
   if(pend){ const n=(state.lacres||[]).filter(r=>!lacSegundoOk(r)).length; pend.textContent=n?('⏳ Aguardando 2º cheque: '+n):'✅ Nenhum lacre aguardando 2º cheque'; pend.style.color=n?'var(--warn)':''; }
-  tbody.innerHTML=lista.map(r=>
+  tbody.innerHTML=visL.map(r=>
     '<tr><td>'+esc(r.data?fmtDateBR(r.data):'')+'</td><td>'+esc(r.hora||'')+'</td><td>'+esc(r.lacre1||r.lacreRetirado||'')+'</td><td>'+esc(r.lacre2||r.lacreNovo||'')+'</td><td>'+esc(r.caixaNome||'')+'</td><td>'+lacPrimeiroCheque(r)+'</td>'+
     '<td>'+lacSegundoCheque(r)+'</td><td>'+esc(r.obs||'')+'</td>'+
     '<td><button class="btn danger btnDelLacre" data-id="'+esc(r.id)+'" style="padding:4px 8px;">✕</button></td></tr>'
-  ).join('')||'<tr><td colspan="9" class="muted">Nenhum registro ainda.</td></tr>';
+  ).join('')+(lista.length>visL.length?'<tr><td colspan="9"><button class="btn secondary btnMaisLac">Mostrar mais ('+(lista.length-visL.length)+' restantes)</button></td></tr>':'')||'<tr><td colspan="9" class="muted">Nenhum registro'+(soPend||(filtro&&filtro!=='__all__')?' neste filtro':' ainda')+'.</td></tr>';
   renderLacresBanner();
 }
 async function registrarLacre(){
@@ -3282,6 +3543,8 @@ async function registrarLacre(){
 }
 document.getElementById('btnRegistrarLacre').addEventListener('click',registrarLacre);
 document.getElementById('lacFiltroCaixa').addEventListener('change',renderLacres);
+document.getElementById('lacSoPend').addEventListener('change',renderLacres);
+document.querySelector('#lacresTable tbody').addEventListener('click',(e)=>{ if(e.target.closest('.btnMaisLac')){ uiLac.limite+=PAGINA_LAC; renderLacres(); } });
 document.querySelector('#lacresTable tbody').addEventListener('click', async (e)=>{
   const apr=e.target.closest('.btnAprovarLacre');
   if(apr){ await aprovarSegundoCheque(apr.dataset.id); return; }
@@ -3920,19 +4183,26 @@ document.getElementById('histCaixaSelect').addEventListener('change', renderHist
 document.getElementById('histBusca').addEventListener('input', debounce(renderHistorico, 200));
 document.getElementById('btnOrdemHist').addEventListener('click',()=>{ uiHist.ordem = uiHist.ordem==='asc'?'desc':'asc'; renderHistorico(); });
 document.getElementById('histBuscaTudo').addEventListener('change', renderHistorico);
+document.getElementById('btnLimparFiltrosHist').addEventListener('click',()=>{
+  document.getElementById('histTipoSelect').value='__all__'; document.getElementById('histCaixaSelect').value='__all__';
+  document.getElementById('histBusca').value=''; document.getElementById('histBuscaTudo').checked=false;
+  document.getElementById('histDe').value=''; document.getElementById('histAte').value='';
+  renderHistorico();
+});
 document.getElementById('histDe').addEventListener('change', renderHistorico);
 document.getElementById('histAte').addEventListener('change', renderHistorico);
 document.querySelectorAll('.btnPeriodoHist').forEach(b=>b.addEventListener('click',()=>definirPeriodoHist(b.dataset.per)));
 document.getElementById('chkHistTodos').addEventListener('change',(e)=>{
-  const list=historicoFiltrado();
+  const list=historicoVisivel();
   if(e.target.checked) list.forEach(h=>uiHist.sel.add(h.confId)); else list.forEach(h=>uiHist.sel.delete(h.confId));
   renderHistorico();
 });
 document.getElementById('btnExcluirHist').addEventListener('click',()=>excluirHistoricos([...uiHist.sel]));
 document.getElementById('histDetalheCard').addEventListener('click',(e)=>{ if(e.target.closest('.btnFecharDetalhe')) document.getElementById('histDetalheCard').style.display='none'; });
 document.querySelector('#historicoTable tbody').addEventListener('click', (e)=>{
+  if (e.target.closest('.btnMaisHist')){ uiHist.limite+=PAGINA_HIST; renderHistorico(); return; }
   const chk = e.target.closest('.chkHist');
-  if (chk){ if(chk.checked) uiHist.sel.add(chk.dataset.id); else uiHist.sel.delete(chk.dataset.id); atualizarSelecaoHist(historicoFiltrado()); return; }
+  if (chk){ if(chk.checked) uiHist.sel.add(chk.dataset.id); else uiHist.sel.delete(chk.dataset.id); atualizarSelecaoHist(historicoVisivel()); return; }
   const row = e.target.closest('.histRow');
   if (row){ renderHistDetalhe(row.dataset.id); const c=document.getElementById('histDetalheCard'); if(c.scrollIntoView) c.scrollIntoView({behavior:'smooth',block:'start'}); }   // o detalhe fica no topo da aba
 });
@@ -4112,6 +4382,27 @@ document.querySelector('#audLogTable tbody').addEventListener('click', async e=>
   if(ok){ try{ await navigator.clipboard.writeText(txt); mostrarToast('Copiado.'); }catch(err){ mostrarToast('Não foi possível copiar.','erro'); } }
 });
 document.getElementById('btnBaixarLog').addEventListener('click', ()=>{ baixarArquivo('registro-de-acoes-'+dataLocalISO(new Date())+'.json', JSON.stringify(listaLogAuditoria(),null,2), 'application/json'); });
+
+document.querySelector('#medCatTable tbody').addEventListener('click', async e=>{
+  if(e.target.closest('.btnMaisMedCat')){ uiMedCat.limite+=40; renderMedicamentosCatalogo(); return; }
+  const b=e.target.closest('.btnSalvarMed'); if(!b) return;
+  const tr=b.closest('tr'); const v=(c)=>{ const el=tr.querySelector(c); return el?el.value:''; };
+  await alterarMedicamentoEmTodas(b.dataset.cod, {codigo:v('.edit-med-cod'), nome:v('.edit-med-nome'), principio:v('.edit-med-pri'), qtde:v('.edit-med-qtd')});
+});
+document.querySelector('#medCatTable tbody').addEventListener('keydown', e=>{
+  if(e.key==='Enter' && e.target.tagName==='INPUT' && /edit-med-/.test(e.target.className)) { e.preventDefault(); const b=e.target.closest('tr').querySelector('.btnSalvarMed'); if(b) b.click(); }
+});
+document.getElementById('medCatBusca').addEventListener('input', e=>{ uiMedCat.busca=e.target.value; uiMedCat.limite=40; renderMedicamentosCatalogo(); });
+document.getElementById('btnPrevHistNomes').addEventListener('click', ()=>{ previaNomesHistorico(); });
+document.getElementById('btnAplicarHistNomes').addEventListener('click', async ()=>{ await aplicarNomesHistorico(); });
+document.getElementById('btnAddMedNovo').addEventListener('click', async ()=>{
+  const v=(id)=>document.getElementById(id).value;
+  await adicionarMedicamentoEmTodas({codigo:v('novoMedCod'), nome:v('novoMedNome'), principio:v('novoMedPri'), qtde:v('novoMedQtd')});
+});
+document.getElementById('btnIrNovoMed').addEventListener('click', ()=>{
+  uiMap.aba='medicamentos'; aplicarAbaMapeamento();
+  const box=document.getElementById('medNovoBox'); if(box){ box.open=true; const el=document.getElementById('novoMedPri'); if(el) el.focus(); }
+});
 
 function baixarArquivo(nome, conteudo, tipo){
   const blob = new Blob([conteudo], {type:tipo});
